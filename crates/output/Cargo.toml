@@ -22,7 +22,6 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 console = { workspace = true }
 tracing = { workspace = true }
-reqwest = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 ratatui = { workspace = true, optional = true }

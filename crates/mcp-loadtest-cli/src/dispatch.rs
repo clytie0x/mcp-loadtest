@@ -170,11 +170,5 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
                 .context("running mcp-loadtest serve --mcp")?;
             Ok(())
         }
-        Cmd::DistributedAgent { stdio } => {
-            if !stdio {
-                anyhow::bail!("distributed agents currently require --stdio");
-            }
-            mcp_loadtest_cli::distributed::run_stdio_agent().await
-        }
     }
 }

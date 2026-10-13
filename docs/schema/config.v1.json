@@ -27,92 +27,8 @@
     "validation": {
       "$ref": "#/$defs/validation",
       "default": {}
-    },
-    "distributed": {
-      "$ref": "#/$defs/distributed"
     }
   },
-  "allOf": [
-    {
-      "if": {
-        "required": [
-          "distributed"
-        ]
-      },
-      "then": {
-        "properties": {
-          "server": {
-            "allOf": [
-              {
-                "properties": {
-                  "transport": {
-                    "enum": [
-                      "http",
-                      "sse",
-                      "ws"
-                    ]
-                  }
-                },
-                "required": [
-                  "transport"
-                ]
-              },
-              {
-                "if": {
-                  "required": [
-                    "auth"
-                  ]
-                },
-                "then": {
-                  "properties": {
-                    "auth": {
-                      "properties": {
-                        "flow": {
-                          "const": "client_credentials"
-                        },
-                        "offline_access": {
-                          "const": false
-                        }
-                      },
-                      "required": [
-                        "flow"
-                      ]
-                    }
-                  }
-                }
-              }
-            ]
-          },
-          "scenario": {
-            "oneOf": [
-              {
-                "$ref": "#/$defs/sustainedScenario"
-              },
-              {
-                "$ref": "#/$defs/patternScenario"
-              }
-            ]
-          },
-          "thresholds": {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "memory_growth_mb"
-                  ]
-                },
-                {
-                  "required": [
-                    "rss_leak_mb_per_sec"
-                  ]
-                }
-              ]
-            }
-          }
-        }
-      }
-    }
-  ],
   "$defs": {
     "duration": {
       "type": "string",
@@ -698,75 +614,6 @@
         }
       }
     },
-    "otlpOutput": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "endpoint"
-      ],
-      "properties": {
-        "endpoint": {
-          "type": "string",
-          "format": "uri",
-          "anyOf": [
-            {
-              "pattern": "^https://"
-            },
-            {
-              "pattern": "^http://(?:localhost|127(?:\\.[0-9]{1,3}){3}|\\[::1\\])(?::[0-9]+)?(?:/|$)"
-            }
-          ]
-        },
-        "headers_from_env": {
-          "$ref": "#/$defs/headerEnvironmentMap"
-        },
-        "timeout": {
-          "$ref": "#/$defs/positiveDuration",
-          "default": "10s"
-        },
-        "fail_on_error": {
-          "type": "boolean",
-          "default": false
-        },
-        "allowed_hosts": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "pattern": "^[^\\s/:]+$"
-          },
-          "uniqueItems": true,
-          "default": []
-        },
-        "max_attempts": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 10,
-          "default": 3
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "headers_from_env": {
-                "minProperties": 1
-              }
-            },
-            "required": [
-              "headers_from_env"
-            ]
-          },
-          "then": {
-            "properties": {
-              "endpoint": {
-                "pattern": "^https://"
-              }
-            }
-          }
-        }
-      ]
-    },
     "historyOutput": {
       "type": "object",
       "additionalProperties": false,
@@ -851,9 +698,6 @@
             "json"
           ]
         },
-        "otlp": {
-          "$ref": "#/$defs/otlpOutput"
-        },
         "history": {
           "$ref": "#/$defs/historyOutput"
         }
@@ -866,75 +710,6 @@
         "strict": {
           "type": "boolean",
           "default": false
-        }
-      }
-    },
-    "distributedAgent": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "name",
-        "ssh_host"
-      ],
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "ssh_host": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^(?!-)[^\\s]+$",
-          "description": "OpenSSH destination, for example loadgen@example.net."
-        },
-        "ssh_port": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
-        },
-        "identity_file": {
-          "$ref": "#/$defs/path"
-        },
-        "known_hosts_file": {
-          "$ref": "#/$defs/path"
-        }
-      }
-    },
-    "distributed": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "agents"
-      ],
-      "properties": {
-        "require_all_agents": {
-          "const": true,
-          "default": true,
-          "description": "v0.2 is fail-closed and does not permit partial clusters."
-        },
-        "connect_timeout": {
-          "$ref": "#/$defs/positiveDuration",
-          "default": "20s"
-        },
-        "ready_timeout": {
-          "$ref": "#/$defs/positiveDuration",
-          "default": "60s"
-        },
-        "heartbeat_timeout": {
-          "$ref": "#/$defs/positiveDuration",
-          "default": "15s"
-        },
-        "start_lead": {
-          "$ref": "#/$defs/positiveDuration",
-          "default": "1s"
-        },
-        "agents": {
-          "type": "array",
-          "minItems": 2,
-          "items": {
-            "$ref": "#/$defs/distributedAgent"
-          },
-          "description": "At least two agents with unique names and SSH destinations. scenario.concurrent must be at least this array length; the runtime enforces both relationships."
         }
       }
     },

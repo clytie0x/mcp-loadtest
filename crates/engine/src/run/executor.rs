@@ -10,11 +10,11 @@ use std::time::{Duration, Instant, SystemTime};
 
 use mcp_loadtest_core::config::{ServerConfig, sanitize_remote_endpoint};
 use mcp_loadtest_core::coverage::CoverageReport;
+use mcp_loadtest_core::metrics::Recorder;
 use mcp_loadtest_core::report::{ProcessStats, Report, ServerInfo, format_iso8601_utc};
 use mcp_loadtest_core::trace::format::TraceHeader;
 use mcp_loadtest_protocol::mcp::Tool;
 use mcp_loadtest_protocol::session::{Session, SessionError};
-use sha2::{Digest, Sha256};
 use tokio::time::Instant as TokioInstant;
 use tokio_util::sync::CancellationToken;
 
@@ -63,28 +63,6 @@ fn redacted_server_error() -> RunError {
 
 fn redacted_stderr_path() -> PathBuf {
     PathBuf::from(if cfg!(windows) { "NUL" } else { "/dev/null" })
-}
-
-fn canonical_tool_inventory_hash(tools: &[Tool]) -> String {
-    let mut inventory: Vec<serde_json::Value> = tools
-        .iter()
-        .map(|tool| {
-            serde_json::json!({
-                "name": tool.name,
-                "description": tool.description,
-                "inputSchema": tool.input_schema,
-                "outputSchema": tool.output_schema,
-            })
-        })
-        .collect();
-    inventory.sort_by(|left, right| {
-        left.get("name")
-            .and_then(serde_json::Value::as_str)
-            .cmp(&right.get("name").and_then(serde_json::Value::as_str))
-    });
-    let encoded = serde_json::to_vec(&inventory).expect("JSON values always serialize");
-    let digest = Sha256::digest(encoded);
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn finalize_requested_trace(writer: Option<&TraceWriter>) -> Result<(), RunError> {
@@ -140,9 +118,6 @@ impl Run {
             stderr_capture,
             trace_path,
             redact_server_identity,
-            metrics_recorder,
-            traffic_start_gate,
-            rng_seed,
         } = self;
 
         // Builders intentionally remain infallible for API compatibility,
@@ -236,54 +211,46 @@ impl Run {
         //     later driving a known tool would otherwise let a broken MCP
         //     discovery surface produce PASS. Strict mode additionally reuses
         //     the registry for input/output schema validation.
-        let (registered_tools, tool_inventory_hash): (Vec<String>, String) =
-            match list_tools_before_startup_deadline(
-                &mut session,
-                startup_deadline,
-                config.server.startup_timeout,
-            )
-            .await
-            {
-                Ok(tools) => {
-                    let tool_inventory_hash = canonical_tool_inventory_hash(&tools);
-                    // Opt-in strict args validation reuses this same registry —
-                    // no extra `tools/list` round-trip (ADR 0010 / 0006).
-                    if config.validation.strict {
-                        session.set_strict_tool_schemas(
-                            tools
-                                .iter()
-                                .map(|t| (t.name.clone(), t.input_schema.clone()))
-                                .collect(),
-                        );
-                        // Result-side registry from the same `tools/list` — only
-                        // tools that advertise an `outputSchema` are validated
-                        // (non-gating Warn policy; see `protocol::schema`).
-                        session.set_strict_tool_output_schemas(
-                            tools
-                                .iter()
-                                .filter_map(|t| {
-                                    t.output_schema.clone().map(|s| (t.name.clone(), s))
-                                })
-                                .collect(),
-                        );
-                    }
-                    (
-                        tools.into_iter().map(|t| t.name).collect(),
-                        tool_inventory_hash,
-                    )
+        let registered_tools: Vec<String> = match list_tools_before_startup_deadline(
+            &mut session,
+            startup_deadline,
+            config.server.startup_timeout,
+        )
+        .await
+        {
+            Ok(tools) => {
+                // Opt-in strict args validation reuses this same registry —
+                // no extra `tools/list` round-trip (ADR 0010 / 0006).
+                if config.validation.strict {
+                    session.set_strict_tool_schemas(
+                        tools
+                            .iter()
+                            .map(|t| (t.name.clone(), t.input_schema.clone()))
+                            .collect(),
+                    );
+                    // Result-side registry from the same `tools/list` — only
+                    // tools that advertise an `outputSchema` are validated
+                    // (non-gating Warn policy; see `protocol::schema`).
+                    session.set_strict_tool_output_schemas(
+                        tools
+                            .iter()
+                            .filter_map(|t| t.output_schema.clone().map(|s| (t.name.clone(), s)))
+                            .collect(),
+                    );
                 }
-                Err(err) => {
-                    let err =
-                        shutdown_after_session_error(session, err, "tools/list startup cleanup")
-                            .await;
-                    let run_error = if redact_server_identity {
-                        redacted_server_error()
-                    } else {
-                        RunError::Session(err)
-                    };
-                    return Err(run_error);
-                }
-            };
+                tools.into_iter().map(|t| t.name).collect()
+            }
+            Err(err) => {
+                let err =
+                    shutdown_after_session_error(session, err, "tools/list startup cleanup").await;
+                let run_error = if redact_server_identity {
+                    redacted_server_error()
+                } else {
+                    RunError::Session(err)
+                };
+                return Err(run_error);
+            }
+        };
 
         // 3. Build the RunContext.
         let hang_threshold = config
@@ -292,7 +259,7 @@ impl Run {
             .unwrap_or(DEFAULT_HANG_THRESHOLD);
         let grace_period = hang_threshold.saturating_mul(2);
         let cancel_token = CancellationToken::new();
-        let metrics = metrics_recorder.unwrap_or_default();
+        let metrics = Recorder::new();
 
         // 3b. Session factory — attached to every scenario's context (cheap:
         //     one Arc). `cold_start` respawns a fresh server per iteration
@@ -399,7 +366,7 @@ impl Run {
             })
         };
 
-        let mut ctx = RunContext::new(
+        let ctx = RunContext::new(
             run_start,
             cancel_token.clone(),
             metrics.clone(),
@@ -407,14 +374,6 @@ impl Run {
             grace_period,
         )
         .with_session_factory(session_factory);
-        if let Some(gate) = traffic_start_gate {
-            ctx = ctx.with_traffic_start_gate(gate);
-        }
-        if let Some(seed) = rng_seed {
-            ctx = ctx.with_rng_seed(seed);
-        }
-        ctx =
-            ctx.with_target_identity(session.server_protocol_version.clone(), tool_inventory_hash);
 
         // 4. Spawn the process sampler if we can resolve a PID. The sampler
         //    is best-effort: if it can't see the PID (already exited, sysinfo

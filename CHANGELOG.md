@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Distributed load generation over OpenSSH workers: the
+  `mcp-loadtest-distributed` crate, the hidden `__distributed-agent`
+  subcommand, the `[distributed]` config block, and the engine's
+  coordinated traffic-start gate and seeded pattern selection that only
+  distributed workers used.
+- The OTLP/HTTP metrics exporter and the `[output.otlp]` config block.
+  JSON, JUnit, and Prometheus reports remain.
+- Both blocks are also gone from the bundled config schema. Configs that
+  still contain them are not rejected; the blocks are ignored.
+
 ## [0.2.0] — Release candidate contents
 
 This section describes the source contents intended for `v0.2.0`. Its presence

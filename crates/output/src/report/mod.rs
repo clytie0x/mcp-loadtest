@@ -7,7 +7,6 @@ pub mod html;
 pub mod json;
 pub mod junit;
 pub mod markdown;
-pub mod otlp;
 pub mod prometheus;
 pub mod terminal;
 pub mod wire;

@@ -15,13 +15,12 @@ use anyhow::{Context, Result};
 
 use mcp_loadtest::StderrCapture;
 use mcp_loadtest::analysis::regression::RegressionThresholds;
-use mcp_loadtest::config::{Config, HistoryOutputConfig, OtlpOutputConfig};
+use mcp_loadtest::config::{Config, HistoryOutputConfig};
 use mcp_loadtest::history::{
     HistorySampleV1, HistoryStore, TrendPolicy, TrendStatus, evaluate_and_record,
     render_trend_markdown,
 };
 use mcp_loadtest::report::Report;
-use mcp_loadtest::report::otlp::{OtlpHttpConfig, OtlpHttpExporter};
 use mcp_loadtest::report::wire::MetricsDocumentV1;
 use mcp_loadtest::run::Run;
 
@@ -33,7 +32,6 @@ mod patterns;
 
 pub(crate) use builder::build_scenario;
 pub use params::parse_dur_str;
-pub(crate) use patterns::parse_patterns;
 
 /// Top-level entry for `Cmd::Run`. Loads `path`, builds the scenario, executes
 /// the run, emits reports, and surfaces any threshold violations as an error
@@ -82,14 +80,8 @@ pub async fn run_from_config_with_output(
     let scenario = build_scenario(&config.scenario.kind, &config.scenario.params)?;
     let output_dir = config.output.report_dir.clone();
     let formats = config.output.formats.clone();
-    let otlp = config.output.otlp.clone();
     let history = config.output.history.clone();
-    let is_distributed = config.distributed.is_some();
-    let execution_fingerprint = if is_distributed {
-        distributed_execution_fingerprint(&config)?
-    } else {
-        local_execution_fingerprint(&config)
-    };
+    let execution_fingerprint = local_execution_fingerprint(&config);
 
     let capture = if tee_stderr {
         StderrCapture::Tee
@@ -99,32 +91,20 @@ pub async fn run_from_config_with_output(
         StderrCapture::Off
     };
 
-    let report = if is_distributed {
-        if capture_stderr || tee_stderr || trace.is_some() {
-            anyhow::bail!(
-                "distributed runs do not support local stderr capture or JSON-RPC tracing"
-            );
-        }
-        crate::distributed::run_controller(&config).await?
-    } else {
-        let mut run = Run::new(config, scenario, output_dir.clone()).with_stderr_capture(capture);
-        if redact_server_identity {
-            run = run.with_redacted_server_identity();
-        }
-        if let Some(trace_path) = trace {
-            run = run.with_trace(trace_path);
-        }
-        run.execute().await?
-    };
+    let mut run = Run::new(config, scenario, output_dir.clone()).with_stderr_capture(capture);
+    if redact_server_identity {
+        run = run.with_redacted_server_identity();
+    }
+    if let Some(trace_path) = trace {
+        run = run.with_trace(trace_path);
+    }
+    let report = run.execute().await?;
 
     emit_reports(&report, &formats, &output_dir)?;
     let history_gate = match history {
         Some(history) => update_history(&report, &output_dir, &history, execution_fingerprint)?,
         None => None,
     };
-    if let Some(otlp) = otlp {
-        export_otlp(&report, &otlp).await?;
-    }
     if !report.passed() {
         anyhow::bail!(
             "run failed correctness gate — {} threshold violation(s), {} deadlock(s), \
@@ -156,24 +136,6 @@ fn local_execution_fingerprint(config: &Config) -> String {
         "local/transport={}/concurrency={concurrency}",
         config.server.transport
     )
-}
-
-fn distributed_execution_fingerprint(config: &Config) -> Result<String> {
-    let distributed = config
-        .distributed
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("missing distributed config"))?;
-    let plan = crate::distributed::workload_plan(config)?;
-    let names = distributed
-        .agents
-        .iter()
-        .map(|agent| agent.name.as_str())
-        .collect::<Vec<_>>()
-        .join(",");
-    Ok(format!(
-        "distributed/transport={}/concurrency={}/agents={names}",
-        config.server.transport, plan.global_concurrency
-    ))
 }
 
 fn update_history(
@@ -226,28 +188,4 @@ fn update_history(
         )));
     }
     Ok(None)
-}
-
-async fn export_otlp(report: &Report, config: &OtlpOutputConfig) -> Result<()> {
-    let exporter = OtlpHttpExporter::new(
-        OtlpHttpConfig::new(config.endpoint.clone())
-            .with_headers_from_env(config.headers_from_env.clone())
-            .with_timeout(config.timeout)
-            .with_fail_on_error(config.fail_on_error)
-            .with_allowed_hosts(config.allowed_hosts.clone())
-            .with_max_attempts(config.max_attempts),
-    )
-    .context("configuring OTLP export")?;
-    let outcome = exporter
-        .export(report)
-        .await
-        .context("exporting OTLP metrics")?;
-    if !outcome.accepted {
-        eprintln!(
-            "warning: OTLP collector did not accept metrics after {} attempt(s) ({})",
-            outcome.attempts,
-            outcome.diagnostic.as_deref().unwrap_or("sanitized failure")
-        );
-    }
-    Ok(())
 }

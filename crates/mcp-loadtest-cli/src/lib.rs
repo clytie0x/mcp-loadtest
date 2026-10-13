@@ -13,7 +13,6 @@ pub mod cmd_cross;
 pub mod cmd_deadlock;
 pub mod cmd_doctor;
 pub mod cmd_run;
-pub mod distributed;
 pub mod emit;
 pub mod explain;
 pub mod hints;

@@ -66,9 +66,8 @@ instead. The project is not distributed through crates.io.
 
 ## New in v0.2.0
 
-- Distributed load generation through short-lived OpenSSH workers
 - Editor-ready Draft 2020-12 config schema
-- JUnit, Prometheus, and OTLP outputs
+- JUnit and Prometheus outputs
 - Rolling baseline history and multi-run regression gates
 - Full final MCP `2026-07-28` client-role support
 - OAuth authorization code, client credentials, CIMD, and dynamic registration
@@ -117,7 +116,7 @@ mcp-loadtest run --config bench.toml
 ```
 
 Each run can produce terminal, Markdown, JSON, self-contained HTML, JUnit XML,
-and Prometheus text reports. OTLP/HTTP export is configured separately.
+and Prometheus text reports.
 Use the schema-stable `metrics.json` for CI comparisons:
 
 ```bash
@@ -158,9 +157,7 @@ thresholds, and baseline gating.
   fresh server, and fail on response divergence.
 - **Regression analysis** — compare two reports or run the same workload
   against multiple servers; rolling history detects multi-run trends.
-- **Distributed load** — shard one global concurrency budget across SSH
-  workers and merge exact latency distributions.
-- **CI and observability** — JSON, JUnit, Prometheus, and OTLP outputs.
+- **CI and observability** — JSON, JUnit, and Prometheus outputs.
 - **Agent access** — `mcp-loadtest serve --mcp` exposes deadlock, sustained
   load, and comparison tools over MCP.
 
@@ -193,8 +190,7 @@ require HTTPS or WSS.
 For OAuth, `[server.auth]` supports authorization-code + PKCE and
 client-credentials flows. Discovery, refresh, and bounded scope step-up are
 handled automatically; client secrets are referenced by environment-variable
-name. Distributed mode permits non-interactive client credentials only, with
-each worker resolving its own secret and acquiring its own token.
+name.
 
 See the [transport security ADR](docs/adr/0007-transport-security-posture.md)
 for resolver pinning, header restrictions, redaction boundaries, and response

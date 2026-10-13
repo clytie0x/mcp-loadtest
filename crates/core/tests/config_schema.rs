@@ -55,16 +55,8 @@ fn schema_advertises_every_runtime_scenario_and_v02_block() {
         ])
     );
     assert_eq!(
-        definitions["distributed"]["properties"]["agents"]["minItems"],
-        2
-    );
-    assert_eq!(
         definitions["auth"]["properties"]["max_step_up_retries"]["maximum"],
         3
-    );
-    assert_eq!(
-        definitions["otlpOutput"]["properties"]["max_attempts"]["maximum"],
-        10
     );
     assert_eq!(
         definitions["historyOutput"]["properties"]["min_samples"]["default"],
@@ -100,15 +92,6 @@ args = { message = "hello" }
 [output]
 formats = ["junit", "prometheus"]
 
-[output.otlp]
-endpoint = "https://otel.example.com/v1/metrics"
-timeout = "10s"
-max_attempts = 3
-allowed_hosts = ["otel.example.com"]
-
-[output.otlp.headers_from_env]
-Authorization = "OTLP_AUTHORIZATION"
-
 [output.history]
 series = "main-sustained"
 directory = "./runs/history"
@@ -119,21 +102,6 @@ max_p99_regression_pct = 10.0
 max_error_rate_regression_pp = 0.5
 max_rps_drop_pct = 10.0
 deadlock_zero_tolerance = true
-
-[distributed]
-require_all_agents = true
-connect_timeout = "20s"
-ready_timeout = "60s"
-heartbeat_timeout = "15s"
-start_lead = "1s"
-
-[[distributed.agents]]
-name = "loadgen-a"
-ssh_host = "runner@loadgen-a.example.com"
-
-[[distributed.agents]]
-name = "loadgen-b"
-ssh_host = "runner@loadgen-b.example.com"
 "#,
     )
     .expect("schema-documented v0.2 config must parse and validate");
@@ -142,14 +110,5 @@ ssh_host = "runner@loadgen-b.example.com"
     assert_eq!(
         config.output.history.as_ref().expect("history").series,
         "main-sustained"
-    );
-    assert_eq!(
-        config
-            .distributed
-            .as_ref()
-            .expect("distributed")
-            .agents
-            .len(),
-        2
     );
 }

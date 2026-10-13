@@ -47,82 +47,6 @@ pub struct Config {
     /// ADR 0005); set `[validation] strict = true` to opt in.
     #[serde(default)]
     pub validation: ValidationConfig,
-    /// Optional distributed load-generation controls. When present, the CLI
-    /// launches one short-lived worker on every configured SSH agent and
-    /// coordinates a single fail-closed run.
-    #[serde(default)]
-    pub distributed: Option<DistributedConfig>,
-}
-
-/// Distributed load-generation controls.
-///
-/// v0.2 uses short-lived workers launched through the local OpenSSH client.
-/// The workers exchange the versioned `mcp-loadtest-dist/1` protocol over
-/// stdin/stdout; there is no resident daemon to install or expose.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[non_exhaustive]
-pub struct DistributedConfig {
-    /// Require every configured agent to become ready and finish. v0.2
-    /// deliberately rejects `false` so partial clusters can never silently
-    /// produce a passing result.
-    #[serde(default = "distributed_require_all_agents")]
-    pub require_all_agents: bool,
-    /// Maximum time allowed to establish each SSH connection.
-    #[serde(default = "distributed_connect_timeout", with = "humantime_serde")]
-    pub connect_timeout: Duration,
-    /// Maximum time allowed for every worker to prepare its local sessions.
-    #[serde(default = "distributed_ready_timeout", with = "humantime_serde")]
-    pub ready_timeout: Duration,
-    /// Maximum silence allowed before a worker is considered lost.
-    #[serde(default = "distributed_heartbeat_timeout", with = "humantime_serde")]
-    pub heartbeat_timeout: Duration,
-    /// Lead time between the coordinated start message and traffic start.
-    #[serde(default = "distributed_start_lead", with = "humantime_serde")]
-    pub start_lead: Duration,
-    /// SSH workers participating in the run.
-    pub agents: Vec<DistributedAgentConfig>,
-}
-
-/// One ephemeral distributed worker reached through OpenSSH.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[non_exhaustive]
-pub struct DistributedAgentConfig {
-    /// Stable human-readable name used in diagnostics and run evidence.
-    pub name: String,
-    /// OpenSSH destination (host or `user@host`).
-    pub ssh_host: String,
-    /// Optional SSH port.
-    #[serde(default)]
-    pub ssh_port: Option<u16>,
-    /// Optional private-key path passed to OpenSSH with `-i`.
-    #[serde(default)]
-    pub identity_file: Option<PathBuf>,
-    /// Optional dedicated known-hosts file. Host-key checking remains
-    /// enabled; this only changes which trust store OpenSSH reads.
-    #[serde(default)]
-    pub known_hosts_file: Option<PathBuf>,
-}
-
-fn distributed_require_all_agents() -> bool {
-    true
-}
-
-fn distributed_connect_timeout() -> Duration {
-    Duration::from_secs(20)
-}
-
-fn distributed_ready_timeout() -> Duration {
-    Duration::from_secs(60)
-}
-
-fn distributed_heartbeat_timeout() -> Duration {
-    Duration::from_secs(15)
-}
-
-fn distributed_start_lead() -> Duration {
-    Duration::from_secs(1)
 }
 
 /// Opt-in protocol-validation block.
@@ -612,36 +536,9 @@ pub struct OutputConfig {
     /// Output formats to emit (`"markdown"`, `"json"`, `"terminal"`).
     #[serde(default = "default_formats")]
     pub formats: Vec<String>,
-    /// Optional one-shot OTLP/HTTP JSON export after the report is complete.
-    #[serde(default)]
-    pub otlp: Option<OtlpOutputConfig>,
     /// Optional rolling baseline history and regression gate.
     #[serde(default)]
     pub history: Option<HistoryOutputConfig>,
-}
-
-/// OTLP/HTTP JSON exporter configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[non_exhaustive]
-pub struct OtlpOutputConfig {
-    /// Full metrics endpoint, normally ending in `/v1/metrics`.
-    pub endpoint: String,
-    /// Outbound header name to environment-variable name.
-    #[serde(default)]
-    pub headers_from_env: BTreeMap<String, String>,
-    /// Per-attempt request timeout.
-    #[serde(default = "default_otlp_timeout", with = "humantime_serde")]
-    pub timeout: Duration,
-    /// Fail the command when the collector ultimately rejects the batch.
-    #[serde(default)]
-    pub fail_on_error: bool,
-    /// Exact-match OTLP collector host allowlist.
-    #[serde(default)]
-    pub allowed_hosts: Vec<String>,
-    /// Maximum attempts including the first request.
-    #[serde(default = "default_otlp_max_attempts")]
-    pub max_attempts: u8,
 }
 
 /// Rolling history baseline configuration.
@@ -675,14 +572,6 @@ pub struct HistoryOutputConfig {
     /// Treat any increase in deadlocks as a regression.
     #[serde(default = "history_deadlock_zero_tolerance")]
     pub deadlock_zero_tolerance: bool,
-}
-
-fn default_otlp_timeout() -> Duration {
-    Duration::from_secs(10)
-}
-
-fn default_otlp_max_attempts() -> u8 {
-    3
 }
 
 fn default_history_directory() -> PathBuf {
@@ -719,7 +608,6 @@ impl OutputConfig {
         Self {
             report_dir,
             formats,
-            otlp: None,
             history: None,
         }
     }
@@ -730,7 +618,6 @@ impl Default for OutputConfig {
         Self {
             report_dir: default_report_dir(),
             formats: default_formats(),
-            otlp: None,
             history: None,
         }
     }
@@ -755,7 +642,6 @@ impl Config {
             thresholds: ThresholdsConfig::default(),
             output: OutputConfig::default(),
             validation: ValidationConfig::default(),
-            distributed: None,
         }
     }
 
@@ -777,13 +663,6 @@ impl Config {
     #[must_use]
     pub fn with_validation(mut self, validation: ValidationConfig) -> Self {
         self.validation = validation;
-        self
-    }
-
-    /// Builder: enable distributed load generation.
-    #[must_use]
-    pub fn with_distributed(mut self, distributed: DistributedConfig) -> Self {
-        self.distributed = Some(distributed);
         self
     }
 }

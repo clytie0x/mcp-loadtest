@@ -152,14 +152,14 @@ from the release claim and keep the candidate unreleased.
 
 Workspace packages depend on sibling `0.2.0` packages that are not in the
 registry yet, so do not claim a verified registry package merely because the
-source tree builds. Inspect the intended contents of all eight packages
+source tree builds. Inspect the intended contents of all seven packages
 without resolving unpublished registry dependencies, then dry-run the two
 independent base crates:
 
 ```bash
 for package in \
   mcp-loadtest-auth mcp-loadtest-core mcp-loadtest-protocol \
-  mcp-loadtest-distributed mcp-loadtest-engine mcp-loadtest-output \
+  mcp-loadtest-engine mcp-loadtest-output \
   mcp-loadtest mcp-loadtest-cli
 do
   cargo package -p "$package" --list

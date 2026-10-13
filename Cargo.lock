@@ -1832,15 +1832,12 @@ name = "mcp-loadtest-cli"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "clap",
  "futures",
  "humantime",
  "mcp-loadtest",
- "mcp-loadtest-distributed",
  "serde",
  "serde_json",
- "sha2",
  "tempfile",
  "tokio",
  "tracing-subscriber",
@@ -1863,22 +1860,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mcp-loadtest-distributed"
-version = "0.2.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "hdrhistogram",
- "mcp-loadtest-core",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "url",
-]
-
-[[package]]
 name = "mcp-loadtest-engine"
 version = "0.2.0"
 dependencies = [
@@ -1890,7 +1871,6 @@ dependencies = [
  "rand 0.9.4",
  "serde",
  "serde_json",
- "sha2",
  "sysinfo",
  "thiserror 2.0.18",
  "tokio",
@@ -1909,7 +1889,6 @@ dependencies = [
  "insta",
  "mcp-loadtest-core",
  "ratatui",
- "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

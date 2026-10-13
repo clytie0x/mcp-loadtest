@@ -69,8 +69,6 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::*;
     use crate::config::{ServerConfig, example_config};
     use crate::version::ProtocolVersion;
@@ -152,124 +150,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_valid_distributed_config_with_defaults() {
-        let toml_in = r#"
-            [server]
-            transport = "http"
-            url = "https://mcp.example.test/mcp"
-            [scenario]
-            type = "sustained"
-            tool = "echo"
-            concurrent = 4
-            [[distributed.agents]]
-            name = "east"
-            ssh_host = "loadgen-east"
-            [[distributed.agents]]
-            name = "west"
-            ssh_host = "runner@loadgen-west"
-            ssh_port = 2222
-        "#;
-        let cfg = Config::from_toml_str(toml_in).expect("distributed config must parse");
-        let distributed = cfg.distributed.expect("distributed block");
-        assert!(distributed.require_all_agents);
-        assert_eq!(distributed.connect_timeout, Duration::from_secs(20));
-        assert_eq!(distributed.ready_timeout, Duration::from_secs(60));
-        assert_eq!(distributed.heartbeat_timeout, Duration::from_secs(15));
-        assert_eq!(distributed.start_lead, Duration::from_secs(1));
-        assert_eq!(distributed.agents.len(), 2);
-        assert_eq!(distributed.agents[1].ssh_port, Some(2222));
-    }
-
-    #[test]
-    fn rejects_distributed_stdio_and_partial_cluster_policy() {
-        let stdio = r#"
-            [server]
-            command = "python"
-            [scenario]
-            type = "sustained"
-            tool = "echo"
-            [[distributed.agents]]
-            name = "east"
-            ssh_host = "loadgen-east"
-            [[distributed.agents]]
-            name = "west"
-            ssh_host = "loadgen-west"
-        "#;
-        let err = Config::from_toml_str(stdio).unwrap_err();
-        assert!(
-            matches!(err, ConfigError::Invalid(ref m) if m.contains("remote stdio")),
-            "got {err}"
-        );
-
-        let partial = r#"
-            [server]
-            transport = "http"
-            url = "https://mcp.example.test/mcp"
-            [scenario]
-            type = "pattern"
-            concurrent = 2
-            [distributed]
-            require_all_agents = false
-            [[distributed.agents]]
-            name = "east"
-            ssh_host = "loadgen-east"
-            [[distributed.agents]]
-            name = "west"
-            ssh_host = "loadgen-west"
-        "#;
-        let err = Config::from_toml_str(partial).unwrap_err();
-        assert!(
-            matches!(err, ConfigError::Invalid(ref m) if m.contains("requires true")),
-            "got {err}"
-        );
-    }
-
-    #[test]
-    fn rejects_duplicate_agents_and_undersharded_concurrency() {
-        let duplicate = r#"
-            [server]
-            transport = "http"
-            url = "https://mcp.example.test/mcp"
-            [scenario]
-            type = "sustained"
-            tool = "echo"
-            concurrent = 2
-            [[distributed.agents]]
-            name = "same"
-            ssh_host = "loadgen-east"
-            [[distributed.agents]]
-            name = "same"
-            ssh_host = "loadgen-west"
-        "#;
-        let err = Config::from_toml_str(duplicate).unwrap_err();
-        assert!(
-            matches!(err, ConfigError::Invalid(ref m) if m.contains("duplicate agent name")),
-            "got {err}"
-        );
-
-        let undersharded = r#"
-            [server]
-            transport = "http"
-            url = "https://mcp.example.test/mcp"
-            [scenario]
-            type = "sustained"
-            tool = "echo"
-            concurrent = 1
-            [[distributed.agents]]
-            name = "east"
-            ssh_host = "loadgen-east"
-            [[distributed.agents]]
-            name = "west"
-            ssh_host = "loadgen-west"
-        "#;
-        let err = Config::from_toml_str(undersharded).unwrap_err();
-        assert!(
-            matches!(err, ConfigError::Invalid(ref m) if m.contains("one slot per agent")),
-            "got {err}"
-        );
-    }
-
-    #[test]
     fn parses_oauth_authorization_code_config() {
         let toml_in = r#"
             [server]
@@ -342,7 +222,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_otlp_and_history_output_blocks() {
+    fn parses_history_output_block() {
         let toml_in = r#"
             [server]
             command = "python"
@@ -351,12 +231,6 @@ mod tests {
             tool = "echo"
             [output]
             formats = ["json", "junit", "prometheus"]
-            [output.otlp]
-            endpoint = "https://otel.example.test/v1/metrics"
-            timeout = "5s"
-            max_attempts = 4
-            [output.otlp.headers_from_env]
-            Authorization = "OTEL_AUTHORIZATION"
             [output.history]
             series = "main-sustained"
             directory = "./history"
@@ -365,9 +239,6 @@ mod tests {
             require_history = true
         "#;
         let cfg = Config::from_toml_str(toml_in).expect("output blocks must parse");
-        let otlp = cfg.output.otlp.expect("otlp block");
-        assert_eq!(otlp.timeout, Duration::from_secs(5));
-        assert_eq!(otlp.max_attempts, 4);
         let history = cfg.output.history.expect("history block");
         assert_eq!(history.series, "main-sustained");
         assert_eq!(history.window, 7);
@@ -388,23 +259,6 @@ mod tests {
         let err = Config::from_toml_str(unknown_format).unwrap_err();
         assert!(
             matches!(err, ConfigError::Invalid(ref m) if m.contains("unknown format")),
-            "got {err}"
-        );
-
-        let plaintext_secret = r#"
-            [server]
-            command = "python"
-            [scenario]
-            type = "sustained"
-            tool = "echo"
-            [output.otlp]
-            endpoint = "http://127.0.0.1:4318/v1/metrics"
-            [output.otlp.headers_from_env]
-            Authorization = "OTEL_AUTHORIZATION"
-        "#;
-        let err = Config::from_toml_str(plaintext_secret).unwrap_err();
-        assert!(
-            matches!(err, ConfigError::Invalid(ref m) if m.contains("requires an HTTPS")),
             "got {err}"
         );
 

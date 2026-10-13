@@ -155,7 +155,6 @@ pub(super) fn validate(cfg: &Config) -> Result<(), ConfigError> {
         ));
     }
 
-    validate_distributed(cfg)?;
     validate_output(cfg)?;
 
     Ok(())
@@ -182,31 +181,6 @@ fn validate_output(cfg: &Config) -> Result<(), ConfigError> {
             return Err(ConfigError::Invalid(format!(
                 "output.formats: duplicate format `{format}`"
             )));
-        }
-    }
-
-    if let Some(otlp) = &cfg.output.otlp {
-        if otlp.timeout.is_zero() {
-            return Err(ConfigError::Invalid(
-                "output.otlp.timeout: must be > 0".into(),
-            ));
-        }
-        if !(1..=10).contains(&otlp.max_attempts) {
-            return Err(ConfigError::Invalid(
-                "output.otlp.max_attempts: must be in 1..=10".into(),
-            ));
-        }
-        validate_https_or_loopback_url(&otlp.endpoint, "output.otlp.endpoint")?;
-        let parsed = Url::parse(&otlp.endpoint)
-            .map_err(|error| ConfigError::Invalid(format!("output.otlp.endpoint: {error}")))?;
-        if parsed.scheme() != "https" && !otlp.headers_from_env.is_empty() {
-            return Err(ConfigError::Invalid(
-                "output.otlp.headers_from_env requires an HTTPS endpoint".into(),
-            ));
-        }
-        validate_header_environment_map(&otlp.headers_from_env, "output.otlp.headers_from_env")?;
-        for host in &otlp.allowed_hosts {
-            validate_bare_host(host, "output.otlp.allowed_hosts")?;
         }
     }
 
@@ -278,46 +252,6 @@ fn portable_series_name(value: &str) -> bool {
             .strip_prefix("LPT")
             .and_then(|suffix| suffix.parse::<u8>().ok())
             .is_some_and(|number| (1..=9).contains(&number))
-}
-
-fn validate_bare_host(host: &str, field: &str) -> Result<(), ConfigError> {
-    if host.is_empty()
-        || host.contains("://")
-        || host.contains('/')
-        || host.contains(':')
-        || host.chars().any(char::is_whitespace)
-    {
-        return Err(ConfigError::Invalid(format!(
-            "{field}: `{host}` must be a bare hostname"
-        )));
-    }
-    Ok(())
-}
-
-fn validate_header_environment_map(
-    headers: &std::collections::BTreeMap<String, String>,
-    field: &str,
-) -> Result<(), ConfigError> {
-    let mut names = std::collections::BTreeSet::new();
-    for (name, env_name) in headers {
-        let folded = name.to_ascii_lowercase();
-        if !is_http_token(name) || is_managed_remote_header(&folded) {
-            return Err(ConfigError::Invalid(format!(
-                "{field}: invalid or managed HTTP header name `{name}`"
-            )));
-        }
-        if !names.insert(folded) {
-            return Err(ConfigError::Invalid(format!(
-                "{field}: duplicate header name `{name}`"
-            )));
-        }
-        if !is_portable_env_name(env_name) {
-            return Err(ConfigError::Invalid(format!(
-                "{field}: `{env_name}` is not a portable environment-variable name"
-            )));
-        }
-    }
-    Ok(())
 }
 
 fn validate_auth(cfg: &Config) -> Result<(), ConfigError> {
@@ -437,110 +371,6 @@ fn validate_https_or_loopback_url(raw: &str, field: &str) -> Result<(), ConfigEr
             "{field}: userinfo and fragments are not allowed"
         )));
     }
-    Ok(())
-}
-
-/// Validate the deliberately narrow v0.2 distributed execution contract.
-fn validate_distributed(cfg: &Config) -> Result<(), ConfigError> {
-    let Some(distributed) = &cfg.distributed else {
-        return Ok(());
-    };
-
-    if !distributed.require_all_agents {
-        return Err(ConfigError::Invalid(
-            "distributed.require_all_agents: v0.2 requires true (partial clusters fail closed)"
-                .into(),
-        ));
-    }
-    if distributed.agents.len() < 2 {
-        return Err(ConfigError::Invalid(
-            "distributed.agents: at least 2 agents are required".into(),
-        ));
-    }
-    for (field, value) in [
-        ("connect_timeout", distributed.connect_timeout),
-        ("ready_timeout", distributed.ready_timeout),
-        ("heartbeat_timeout", distributed.heartbeat_timeout),
-        ("start_lead", distributed.start_lead),
-    ] {
-        if value.is_zero() {
-            return Err(ConfigError::Invalid(format!(
-                "distributed.{field}: must be > 0"
-            )));
-        }
-    }
-
-    let mut names = std::collections::BTreeSet::new();
-    let mut hosts = std::collections::BTreeSet::new();
-    for agent in &distributed.agents {
-        let name = agent.name.trim();
-        let host = agent.ssh_host.trim();
-        if name.is_empty() {
-            return Err(ConfigError::Invalid(
-                "distributed.agents.name: must not be empty".into(),
-            ));
-        }
-        if host.is_empty() || host.starts_with('-') || host.chars().any(char::is_whitespace) {
-            return Err(ConfigError::Invalid(format!(
-                "distributed agent `{name}`: ssh_host must be a non-empty OpenSSH destination without whitespace"
-            )));
-        }
-        if !names.insert(name) {
-            return Err(ConfigError::Invalid(format!(
-                "distributed.agents: duplicate agent name `{name}`"
-            )));
-        }
-        if !hosts.insert((host, agent.ssh_port)) {
-            return Err(ConfigError::Invalid(format!(
-                "distributed.agents: duplicate SSH destination `{host}`"
-            )));
-        }
-    }
-
-    if !matches!(cfg.server.transport.as_str(), "http" | "sse" | "ws") {
-        return Err(ConfigError::Invalid(
-            "distributed runs require server.transport = \"http\", \"sse\", or \"ws\"; remote stdio is unsupported"
-                .into(),
-        ));
-    }
-    if !matches!(cfg.scenario.kind.as_str(), "sustained" | "pattern") {
-        return Err(ConfigError::Invalid(format!(
-            "distributed runs support scenario.type = \"sustained\" or \"pattern\", got `{}`",
-            cfg.scenario.kind
-        )));
-    }
-    let concurrency = cfg
-        .scenario
-        .params
-        .get("concurrent")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(10);
-    if concurrency < distributed.agents.len() as u64 {
-        return Err(ConfigError::Invalid(format!(
-            "scenario.concurrent: distributed runs require at least one slot per agent ({} agents, got {concurrency})",
-            distributed.agents.len()
-        )));
-    }
-    if cfg.thresholds.memory_growth_mb.is_some() || cfg.thresholds.rss_leak_mb_per_sec.is_some() {
-        return Err(ConfigError::Invalid(
-            "distributed runs do not support process memory thresholds; worker processes do not own the remote MCP server"
-                .into(),
-        ));
-    }
-    if let Some(auth) = &cfg.server.auth {
-        if auth.flow != OAuthFlow::ClientCredentials {
-            return Err(ConfigError::Invalid(
-                "distributed OAuth requires flow = \"client_credentials\"; interactive authorization_code runs must execute locally"
-                    .into(),
-            ));
-        }
-        if auth.offline_access {
-            return Err(ConfigError::Invalid(
-                "distributed client_credentials OAuth does not support offline_access".into(),
-            ));
-        }
-    }
-
     Ok(())
 }
 
