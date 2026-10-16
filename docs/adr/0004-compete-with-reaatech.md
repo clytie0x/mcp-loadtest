@@ -1,7 +1,7 @@
 # 4. Strategy: head-on competition with reaatech/mcp-load-test
 
 Date: 2026-05-10
-Status: Accepted
+Status: Superseded by [0024](0024-reposition-as-mcp-bug-detector.md)
 
 ## Context
 

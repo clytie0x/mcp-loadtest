@@ -9,7 +9,7 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0001](0001-language-rust.md)                  | Language: Rust                                                        | Accepted |
 | [0002](0002-runtime-tokio.md)                  | Async runtime: tokio                                                  | Accepted |
 | [0003](0003-histogram-hdr.md)                  | Latency histogram: hdrhistogram                                       | Accepted |
-| [0004](0004-compete-with-reaatech.md)          | Strategy: head-on competition with reaatech/mcp-load-test             | Accepted |
+| [0004](0004-compete-with-reaatech.md)          | Strategy: head-on competition with reaatech/mcp-load-test             | Superseded by 0024 |
 | [0005](0005-serve-mcp-mode.md)                 | Serve mode: expose load tester as MCP server over stdio               | Accepted |
 | [0006](0006-zero-copy-protocol-types.md)       | Zero-copy protocol types on the request hot path                      | Accepted |
 | [0007](0007-transport-security-posture.md)     | Transport security posture: redirects, frame caps, path validation    | Accepted |
@@ -29,6 +29,7 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0021](0021-trace-record-replay.md)            | Trace record + replay: JSONL `mcp-trace/1`, redaction, replay diff    | Accepted |
 | [0022](0022-six-crate-workspace.md)            | Six-crate layered workspace (core/protocol/engine/output/facade/cli)  | Accepted |
 | [0023](0023-mcp-2026-final-reconciliation.md)  | Reconcile the scoped MCP 2026-07-28 implementation to the final tag   | Accepted; scoped experimental implementation |
+| [0024](0024-reposition-as-mcp-bug-detector.md) | Strategy: reposition as an MCP concurrency-bug CI gate (supersedes 0004) | Accepted |
 
 ## When to write a new ADR
 
