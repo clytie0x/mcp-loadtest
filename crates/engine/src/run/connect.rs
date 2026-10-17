@@ -464,7 +464,9 @@ pub(super) async fn build_session(
                     None => SpawnOptions::inherit(),
                     Some(path) if tee => SpawnOptions::tee_stderr(path),
                     Some(path) => SpawnOptions::capture_stderr(path),
-                };
+                }
+                .with_env(config.server.env.clone())
+                .with_working_dir(config.server.working_dir.clone());
                 let transport = startup_connect(startup_deadline, startup_timeout, async {
                     StdioTransport::spawn_with(command, config.server.args.iter(), &opts)
                         .await
@@ -546,7 +548,9 @@ pub(super) async fn build_session(
                 None => SpawnOptions::inherit(),
                 Some(path) if tee => SpawnOptions::tee_stderr(path),
                 Some(path) => SpawnOptions::capture_stderr(path),
-            };
+            }
+            .with_env(config.server.env.clone())
+            .with_working_dir(config.server.working_dir.clone());
             let transport = startup_connect(startup_deadline, startup_timeout, async {
                 StdioTransport::spawn_with(command, config.server.args.iter(), &opts)
                     .await

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `[server.env]` and `[server] working_dir` were parsed but never applied, so
+  every stdio server (the run session and every pooled session) started with
+  the parent's environment and directory. `SpawnOptions` now carries both and
+  `run` passes them on each spawn. Found during Phase 1 field runs against
+  `@modelcontextprotocol/server-memory`, whose `MEMORY_FILE_PATH` was ignored.
 - The `serve_smoke` test now honours `CARGO_TARGET_DIR` when locating and
   building the CLI binary (#5).
 

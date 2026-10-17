@@ -81,8 +81,13 @@ impl StdioTransport {
             ),
         };
 
-        let mut child = Command::new(command)
+        let mut cmd = Command::new(command);
+        if let Some(dir) = &opts.working_dir {
+            cmd.current_dir(dir);
+        }
+        let mut child = cmd
             .args(args)
+            .envs(&opts.env)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(stderr_cfg)
