@@ -212,6 +212,24 @@ impl Session {
         P: Serialize + ?Sized,
         R: DeserializeOwned,
     {
+        self.request_skipping_stale(method, params, None).await
+    }
+
+    /// Like [`Session::request`], but first sets aside one late reply carrying
+    /// the given id — an earlier request whose caller stopped waiting (the
+    /// timed-out auto-negotiation probe). The set-aside body is stored in the
+    /// slot so the caller can still act on it. Any other id mismatch still
+    /// fails as before.
+    pub(super) async fn request_skipping_stale<P, R>(
+        &mut self,
+        method: &str,
+        params: &P,
+        stale: Option<(u64, &mut Option<String>)>,
+    ) -> Result<R, SessionError>
+    where
+        P: Serialize + ?Sized,
+        R: DeserializeOwned,
+    {
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
 
@@ -238,7 +256,15 @@ impl Session {
                 params,
             })?,
         };
-        let response_body = self.transport.request(&body).await?;
+        let mut response_body = self.transport.request(&body).await?;
+        if let Some((stale_id, slot)) = stale {
+            let first: ResponseEnvelope = serde_json::from_str(&response_body)?;
+            if first.id.as_u64() == Some(stale_id) {
+                let late =
+                    std::mem::replace(&mut response_body, self.transport.recv_response().await?);
+                *slot = Some(late);
+            }
+        }
 
         let env: ResponseEnvelope = serde_json::from_str(&response_body)?;
         if env.jsonrpc != JSONRPC_VERSION {

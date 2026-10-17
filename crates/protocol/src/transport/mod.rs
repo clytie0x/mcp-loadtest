@@ -88,6 +88,19 @@ pub trait Transport: Send {
         ))
     }
 
+    /// Read the next response frame **without** sending anything.
+    ///
+    /// Used to drain the late reply to a request whose caller stopped
+    /// waiting (the auto-negotiation `server/discover` probe times out, then
+    /// `initialize` goes out on the same stream). Only stream transports can
+    /// hold such a reply; request/response transports (HTTP / SSE /
+    /// WebSocket) inherit this default, which reports it as unsupported.
+    async fn recv_response(&mut self) -> Result<String, TransportError> {
+        Err(TransportError::Other(
+            "recv_response unsupported on this transport".into(),
+        ))
+    }
+
     /// PID of the underlying process if applicable. Stdio knows; HTTP / SSE
     /// don't (would require a server-reported field, which MCP doesn't have).
     fn pid(&self) -> Option<u32> {

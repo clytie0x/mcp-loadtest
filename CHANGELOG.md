@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the parent's environment and directory. `SpawnOptions` now carries both and
   `run` passes them on each spawn. Found during Phase 1 field runs against
   `@modelcontextprotocol/server-memory`, whose `MEMORY_FILE_PATH` was ignored.
+- Auto protocol negotiation no longer kills a session whose server answers
+  the `server/discover` probe after the 5 s probe window. The late reply used
+  to be read as the `initialize` response and failed as an id mismatch
+  (reported as `Malformed`). It is now read before the `initialize` result:
+  a late error is skipped and the legacy handshake continues, while a late
+  successful discovery is adopted as a 2026-07-28 session when the server
+  then refuses `initialize` (-32022). Found during Phase 1 field runs:
+  10 or more concurrent `mcp-server-git` processes hit the first case, and
+  `markitdown-mcp` (about 5 s to start) hit the second on every run.
+  New `Transport::recv_response` (default: unsupported) lets stream
+  transports read that reply.
 - The `serve_smoke` test now honours `CARGO_TARGET_DIR` when locating and
   building the CLI binary (#5).
 

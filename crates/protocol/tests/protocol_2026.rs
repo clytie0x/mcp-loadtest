@@ -128,3 +128,83 @@ async fn auto_falls_back_to_legacy_but_not_on_modern_errors() {
     assert_eq!(requests[1]["params"]["protocolVersion"], "2025-11-25");
     assert_eq!(requests[2]["method"], "notifications/initialized");
 }
+
+/// A server too slow to answer `server/discover` within the probe window:
+/// the probe is abandoned, and its late error reply arrives just before the
+/// `initialize` result on the same stdio-like stream.
+struct LateDiscoverTransport {
+    pending: VecDeque<String>,
+}
+
+#[async_trait]
+impl Transport for LateDiscoverTransport {
+    async fn request(&mut self, body: &str) -> Result<String, TransportError> {
+        let request: Value = serde_json::from_str(body).expect("request JSON");
+        if request["method"] == "server/discover" {
+            // Cancelled by the probe timeout before this resolves.
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        }
+        self.pending.pop_front().ok_or(TransportError::Closed)
+    }
+
+    async fn recv_response(&mut self) -> Result<String, TransportError> {
+        self.pending.pop_front().ok_or(TransportError::Closed)
+    }
+
+    async fn notify(&mut self, _body: &str) -> Result<(), TransportError> {
+        Ok(())
+    }
+
+    async fn shutdown(self: Box<Self>) -> Result<(), TransportError> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn auto_skips_late_reply_to_an_abandoned_discover_probe() {
+    let transport = LateDiscoverTransport {
+        pending: [
+            json!({"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Invalid request parameters"}}),
+            json!({"jsonrpc":"2.0","id":2,"result":{
+                "protocolVersion":"2025-11-25","capabilities":{},
+                "serverInfo":{"name":"slow-legacy","version":"1"}
+            }}),
+        ]
+        .into_iter()
+        .map(|value| serde_json::to_string(&value).expect("response JSON"))
+        .collect(),
+    };
+    let session = Session::from_transport_auto(transport, Duration::from_secs(1))
+        .await
+        .expect("late discover reply must not break the legacy fallback");
+    assert_eq!(
+        session.negotiated_version(),
+        Some(ProtocolVersion::V2025_11_25)
+    );
+}
+
+#[tokio::test]
+async fn auto_adopts_late_successful_discover_reply() {
+    // A slow 2026-07-28 server: it accepts the abandoned probe, so it then
+    // refuses the fallback `initialize`.
+    let transport = LateDiscoverTransport {
+        pending: [
+            json!({"jsonrpc":"2.0","id":1,"result":{
+                "resultType":"complete","ttlMs":0,"cacheScope":"private",
+                "supportedVersions":["2026-07-28"],"capabilities":{}
+            }}),
+            json!({"jsonrpc":"2.0","id":2,"error":{"code":-32022,
+                "message":"connection is serving the 2026-07-28 protocol; the initialize handshake is not accepted"}}),
+        ]
+        .into_iter()
+        .map(|value| serde_json::to_string(&value).expect("response JSON"))
+        .collect(),
+    };
+    let session = Session::from_transport_auto(transport, Duration::from_secs(1))
+        .await
+        .expect("late successful discover reply must yield a modern session");
+    assert_eq!(
+        session.negotiated_version(),
+        Some(ProtocolVersion::V2026_07_28)
+    );
+}

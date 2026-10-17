@@ -19,6 +19,7 @@ use serde_json::Value;
 
 use super::lifecycle::cleanup_failed_startup;
 use super::{Session, SessionError};
+use crate::jsonrpc::{ResponseEnvelope, ResponsePayload};
 use crate::mcp::{ClientInfo, DiscoverResult, ProtocolVersion};
 use crate::transport::Transport;
 
@@ -103,25 +104,49 @@ impl Session {
         session.transport.set_protocol_version(modern.as_str());
         let probe_timeout = startup_timeout.min(DISCOVER_PROBE_TIMEOUT);
         let probe = tokio::time::timeout(probe_timeout, session.discover()).await;
+        // A timed-out probe was abandoned mid-flight: a slow server may still
+        // answer it, just ahead of the `initialize` result on a stream
+        // transport. Its id is the last one handed out.
+        let mut abandoned_probe = None;
         match probe {
             Ok(Ok(())) => return Ok(session),
             Ok(Err(SessionError::Server(error))) if matches!(error.code, -32022..=-32020) => {
                 return Err(cleanup_failed_startup(session, SessionError::Server(error)).await);
             }
-            Ok(Err(SessionError::Server(_))) | Err(_) => {}
+            Ok(Err(SessionError::Server(_))) => {}
+            Err(_) => abandoned_probe = Some(session.next_id.wrapping_sub(1)),
             Ok(Err(error)) => return Err(cleanup_failed_startup(session, error).await),
         }
 
         let legacy = ProtocolVersion::V2025_11_25;
-        session.stateless = None;
+        let modern_meta = session.stateless.take();
         session.advertised_version = legacy;
         session.negotiated_version = None;
         session.server_protocol_version.clear();
         session.transport.set_protocol_version(legacy.as_str());
-        let startup = tokio::time::timeout(startup_timeout, session.initialize()).await;
+        let mut late_probe_reply = None;
+        let startup = tokio::time::timeout(
+            startup_timeout,
+            session
+                .initialize_skipping_stale(abandoned_probe.map(|id| (id, &mut late_probe_reply))),
+        )
+        .await;
         match startup {
             Ok(Ok(())) => Ok(session),
-            Ok(Err(error)) => Err(cleanup_failed_startup(session, error).await),
+            Ok(Err(error)) => {
+                // The server took the timed-out probe after all: it answered
+                // `server/discover` and now serves 2026-07-28, which is why it
+                // refused `initialize`. Adopt the modern connection.
+                if let Some(discovery) = late_probe_reply.as_deref().and_then(late_discovery) {
+                    session.stateless = modern_meta;
+                    session.advertised_version = modern;
+                    session.transport.set_protocol_version(modern.as_str());
+                    if session.accept_discovery(discovery).is_ok() {
+                        return Ok(session);
+                    }
+                }
+                Err(cleanup_failed_startup(session, error).await)
+            }
             Err(_) => Err(cleanup_failed_startup(
                 session,
                 SessionError::StartupTimeout(startup_timeout),
@@ -228,5 +253,14 @@ impl Session {
         self.server_protocol_version = advertised.to_string();
         self.negotiated_version = Some(advertised);
         Ok(())
+    }
+}
+
+/// The `server/discover` result inside a late probe reply, if it succeeded.
+fn late_discovery(body: &str) -> Option<DiscoverResult> {
+    let envelope: ResponseEnvelope = serde_json::from_str(body).ok()?;
+    match envelope.payload {
+        ResponsePayload::Ok { result } => serde_json::from_value(result).ok(),
+        ResponsePayload::Err { .. } => None,
     }
 }

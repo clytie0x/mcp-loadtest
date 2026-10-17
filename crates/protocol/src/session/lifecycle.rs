@@ -127,6 +127,15 @@ impl Session {
     }
 
     pub(super) async fn initialize(&mut self) -> Result<(), SessionError> {
+        self.initialize_skipping_stale(None).await
+    }
+
+    /// [`Session::initialize`] that sets aside one late reply to an abandoned
+    /// request (id and slot in `stale`) ahead of the `initialize` result.
+    pub(super) async fn initialize_skipping_stale(
+        &mut self,
+        stale: Option<(u64, &mut Option<String>)>,
+    ) -> Result<(), SessionError> {
         let params = InitializeParams {
             protocol_version: self.advertised_version.as_str().to_owned(),
             capabilities: serde_json::json!({}),
@@ -135,7 +144,9 @@ impl Session {
                 version: crate::VERSION.to_owned(),
             },
         };
-        let result: InitializeResult = self.request("initialize", &params).await?;
+        let result: InitializeResult = self
+            .request_skipping_stale("initialize", &params, stale)
+            .await?;
         self.server_protocol_version = result.protocol_version;
         self.negotiated_version = self.classify_negotiated_version();
         // Streamable HTTP attaches the negotiated version as the

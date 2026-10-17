@@ -102,17 +102,9 @@ impl StdioTransport {
     fn stdin_mut(&mut self) -> Result<&mut ChildStdin, TransportError> {
         self.stdin.as_mut().ok_or(TransportError::Closed)
     }
-}
 
-#[async_trait]
-impl Transport for StdioTransport {
-    async fn request(&mut self, body: &str) -> Result<String, TransportError> {
-        // Write framed line.
-        let stdin = self.stdin_mut()?;
-        stdin.write_all(body.as_bytes()).await?;
-        stdin.write_all(b"\n").await?;
-        stdin.flush().await?;
-
+    /// Read the next non-notification frame from stdout.
+    async fn read_response(&mut self) -> Result<String, TransportError> {
         // Read the response line, with a wide default timeout so a wedged
         // server still surfaces eventually rather than hanging tests forever.
         //
@@ -148,6 +140,23 @@ impl Transport for StdioTransport {
         Err(TransportError::Other(format!(
             "server sent {MAX_SKIPPED_NOTIFICATIONS}+ consecutive notifications with no response"
         )))
+    }
+}
+
+#[async_trait]
+impl Transport for StdioTransport {
+    async fn request(&mut self, body: &str) -> Result<String, TransportError> {
+        // Write framed line.
+        let stdin = self.stdin_mut()?;
+        stdin.write_all(body.as_bytes()).await?;
+        stdin.write_all(b"\n").await?;
+        stdin.flush().await?;
+
+        self.read_response().await
+    }
+
+    async fn recv_response(&mut self) -> Result<String, TransportError> {
+        self.read_response().await
     }
 
     async fn notify(&mut self, body: &str) -> Result<(), TransportError> {
