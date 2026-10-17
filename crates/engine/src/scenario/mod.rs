@@ -34,6 +34,9 @@ pub mod version_matrix;
 ///
 /// Do not modify this trait signature without a CHANGELOG entry: every
 /// scenario and external `impl Scenario` depends on it.
+// async_trait marks each boxed-future method #[must_use]; Rust 1.99 clippy
+// flags that as double_must_use.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Scenario: Send + Sync {
     /// Drive the scenario until completion or until `ctx.cancel_token` fires.

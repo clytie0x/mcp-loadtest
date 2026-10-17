@@ -48,6 +48,9 @@ pub enum TransportError {
 /// implement this; [`crate::Session`] is generic over `Box<dyn Transport>`.
 ///
 /// **Locked for M4.** Method signatures are stable across patch versions.
+// async_trait marks each boxed-future method #[must_use]; Rust 1.99 clippy
+// flags that as double_must_use.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Transport: Send {
     /// Send a request body (single JSON-RPC object, no trailing newline) and

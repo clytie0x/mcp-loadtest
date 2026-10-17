@@ -64,6 +64,9 @@ struct OAuthBinding {
 }
 
 /// Run-scoped callback used to satisfy bounded 401/403 OAuth challenges.
+// async_trait marks each boxed-future method #[must_use]; Rust 1.99 clippy
+// flags that as double_must_use.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait OAuthChallengeHandler: Send + Sync {
     /// Obtain a new issuer/resource-bound provider after validating the
