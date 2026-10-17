@@ -16,7 +16,7 @@
 //! 5. `sustained_load` — wraps [`crate::scenario::sustained::Sustained`].
 //! 6. `compare_runs`   — reads two `metrics.json` files and diffs them.
 //!
-//! Every run tool returns the same verdict fields (see [`verdict`]) so an
+//! Every run tool returns the same verdict fields (built by `verdict`) so an
 //! agent can branch on `passed` and read `failure_reasons` without knowing
 //! which tool produced them. Handlers return `Result<Value, ToolError>`; the
 //! caller (in `mod.rs`) maps errors to JSON-RPC error objects.
