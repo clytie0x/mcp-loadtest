@@ -208,7 +208,10 @@ fn render_latency_value(
 
 fn write_errors(out: &mut String, outcomes: &OutcomeCounts) -> std::fmt::Result {
     // Match the markdown reporter's category ordering for consistency.
+    // Hang and deadlock are counted in the error total above, so list them.
     let rows: Vec<(&'static str, u64)> = [
+        ("hang", outcomes.hang),
+        ("deadlock", outcomes.deadlock),
         ("server_error", outcomes.server_error),
         ("protocol_error", outcomes.protocol_error),
         ("timeout", outcomes.timeout),

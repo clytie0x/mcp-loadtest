@@ -302,6 +302,39 @@ fn reporters_disclose_unsampled_process_metrics_and_notes() {
 }
 
 #[test]
+fn errors_section_lists_hangs_and_deadlocks_counted_by_error_rate() {
+    let mut report = pass_report();
+    report.scenario_outcome.total_calls = 5;
+    report.scenario_outcome.successful_calls = 1;
+    report.scenario_outcome.hang_count = 3;
+    report.scenario_outcome.deadlock_count = 1;
+    report.metrics.throughput.total_requests = 5;
+    report.metrics.throughput.successful_requests = 1;
+    report.metrics.outcomes = OutcomeCounts {
+        success: 1,
+        hang: 3,
+        deadlock: 1,
+        ..Default::default()
+    };
+
+    let markdown = MarkdownReporter
+        .render(&report)
+        .expect("render hang markdown report");
+    assert!(markdown.contains("- Error rate: 80.00%"), "{markdown}");
+    assert!(!markdown.contains("_No errors recorded._"), "{markdown}");
+    assert!(markdown.contains("| Hang | 3 |"), "{markdown}");
+    assert!(markdown.contains("| Deadlock | 1 |"), "{markdown}");
+
+    console::set_colors_enabled(false);
+    let terminal = TerminalReporter
+        .render(&report)
+        .expect("render hang terminal report");
+    assert!(terminal.contains("4 errors (80.00%)"), "{terminal}");
+    assert!(terminal.contains("hang=3"), "{terminal}");
+    assert!(terminal.contains("deadlock=1"), "{terminal}");
+}
+
+#[test]
 fn markdown_pass_snapshot() {
     let r = pass_report();
     let md = MarkdownReporter.render(&r).expect("render markdown pass");

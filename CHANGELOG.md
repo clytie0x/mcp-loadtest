@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   optional `notes` array in `metrics.json`. Both JSON fields are additive
   and omitted in the common case. Found during Phase 1 field runs, where
   pooled stdio runs showed `Peak RSS: 0.0 MB · Avg CPU: 0.0%`.
+- The Markdown Errors table and the terminal `errors:` line now list hangs
+  and deadlocks. The error rate already counted them, so a run with only
+  hangs showed a non-zero error rate next to "No errors recorded". Found
+  during Phase 1 field runs (3 hangs of 5 calls, `Error rate: 60.00%`).
 - The `serve_smoke` test now honours `CARGO_TARGET_DIR` when locating and
   building the CLI binary (#5).
 

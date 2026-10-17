@@ -165,10 +165,12 @@ fn render_latency_cell(
 fn write_errors(out: &mut String, outcomes: &OutcomeCounts) -> std::fmt::Result {
     writeln!(out, "## Errors")?;
 
-    // Collect non-zero error rows in DESIGN.md §17.2 order. Note: Success and
-    // Hang are not errors per se; Hang is informational and Success is the
-    // happy path. Per DESIGN.md template, only the error categories appear.
+    // Collect non-zero error rows in DESIGN.md §17.2 order. Hang and
+    // Deadlock are listed because the summary's error rate counts every
+    // non-successful call, and this table must account for that rate.
     let rows: Vec<(&'static str, u64)> = [
+        ("Hang", outcomes.hang),
+        ("Deadlock", outcomes.deadlock),
         ("Timeout", outcomes.timeout),
         ("ServerError", outcomes.server_error),
         ("ProtocolError", outcomes.protocol_error),
