@@ -31,3 +31,4 @@ http-standard-headers	executed	Final-spec-reconciled standard HTTP request-heade
 http-custom-headers	executed	Final-spec-reconciled static custom request-header behavior implemented by the adapter.
 http-invalid-tool-headers	executed	Reserved, malformed, and unsafe request headers rejected in the final-spec-reconciled subset.
 json-schema-ref-no-deref	executed	Full JSON Schema 2020-12 validation resolves local references with a fail-closed retriever that never fetches network references.
+json-schema-2020-12-preservation	executed	Adapter round-trips the advertised inputSchema verbatim; the official runner diffs it against the JSON Schema 2020-12 fixture.

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The official conformance runners pin `modelcontextprotocol/conformance`
+  `c37eec8` (was `49103de`) and also execute
+  `json-schema-2020-12-preservation`; all 33 client scenarios pass. See
+  [ADR 0026](docs/adr/0026-advance-conformance-pin-c37eec8.md).
 - `serve --mcp` tools for agents: `list_target_tools` returns the target's
   `tools/list` so an agent can pick a tool to probe, `race_check` runs the
   divergence detector, and `cold_start` times the handshake and the first
@@ -22,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OAuth `resource` parameters now carry the protected-resource metadata
+  identifier byte for byte. The client re-serialized it through `url::Url`,
+  which appends `/` to a pathless origin such as `https://mcp.example`, so
+  authorization, token, refresh, and client-credentials requests named a
+  different resource than the server published. Exposed by the new
+  `resource-parameter-matches-prm` check in the official conformance suite.
+  `AuthorizationContext::resource_identifier` returns the exact value.
 - The stdio transport no longer corrupts multi-byte UTF-8 characters that
   straddle two 8 KiB reads. It decoded each chunk separately, so a Thai or
   CJK character on a chunk boundary in a long response became U+FFFD, which

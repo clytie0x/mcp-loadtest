@@ -84,7 +84,7 @@ The stable default remains the handshake-based `2025-11-25` revision.
 `2026-07-28` is an explicit experimental stateless implementation reconciled
 to the official final tag at spec commit
 `5f5440bb26a62e2cf3440b92da5a667efa03b267` and conformance commit
-`49103de6ed70804e940637bf3e9e29e4a3f54e64`. The upstream revision is final;
+`c37eec888e1c6ff140af79987a40008548b7cc5f` (ADR 0026). The upstream revision is final;
 the implementation remains experimental because it intentionally covers only
 tools, discovery, request metadata/headers, stdio, and Streamable HTTP. It is
 not the default or a full-protocol conformance claim (ADR 0023).
@@ -459,12 +459,13 @@ dedicated official-harness runners:
 `bash crates/protocol/tests/run-official-conformance.sh` and
 `pwsh crates/protocol/tests/run-official-conformance.ps1`. They pin
 final spec commit `5f5440bb26a62e2cf3440b92da5a667efa03b267` and conformance
-commit `49103de6ed70804e940637bf3e9e29e4a3f54e64`, verify the final
+commit `c37eec888e1c6ff140af79987a40008548b7cc5f`, verify the final
 tag-to-commit identity, and retain the complete official client inventory plus
-an explicit executed/not-executed scope manifest. A successful five-scenario
-tools/discovery/metadata/header run is a scoped release gate, not an evergreen
-unpinned network test or a claim over full-protocol, auth, MRTR,
-subscriptions, schema-reference, server, or authorization-server suites. The
+an explicit executed/not-executed scope manifest. The 33 executed client
+scenarios are the frozen `requirements/2026-07-28.yaml` client set plus
+`json-schema-2020-12-preservation`. A successful run is a scoped release
+gate, not an evergreen unpinned network test or a claim over server or
+authorization-server suites. The
 conformance pin remains the latest official harness, but its `2026-07-28`
 label/schema are still DRAFT/provisional and its vendored schema comes from
 specification commit `71e306956a4959c9655e5036be215d41986596e6`.

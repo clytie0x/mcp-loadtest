@@ -4,7 +4,7 @@ set -euo pipefail
 # Pin the exact official final specification and reviewed conformance harness
 # revisions. The release claim covers every applicable client scenario marked
 # `executed` in the checked-in scope manifest, with no expected failures.
-conformance_ref="49103de6ed70804e940637bf3e9e29e4a3f54e64"
+conformance_ref="c37eec888e1c6ff140af79987a40008548b7cc5f"
 conformance_spec_source="71e306956a4959c9655e5036be215d41986596e6"
 spec_ref="5f5440bb26a62e2cf3440b92da5a667efa03b267"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"

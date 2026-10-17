@@ -100,7 +100,7 @@ artifacts, not only the self-authored Python fixtures. This candidate is pinned
 to specification commit
 `5f5440bb26a62e2cf3440b92da5a667efa03b267` (the official final
 `2026-07-28` tag) and conformance commit
-`49103de6ed70804e940637bf3e9e29e4a3f54e64`; record both in the evidence.
+`c37eec888e1c6ff140af79987a40008548b7cc5f`; record both in the evidence.
 Run the platform-appropriate command:
 
 ```bash

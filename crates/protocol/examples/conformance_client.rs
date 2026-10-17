@@ -176,6 +176,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         "json-schema-ref-no-deref" => {
             let _ = session.list_tools().await?;
         }
+        "json-schema-2020-12-preservation" => {
+            // Round-trip the focal tool's inputSchema exactly as the client
+            // holds it; the harness diffs it against the fixture.
+            let tools = session.list_tools().await?;
+            let schema = tools
+                .iter()
+                .find(|tool| tool.name == "json_schema_2020_12_tool")
+                .map(|tool| tool.input_schema.clone())
+                .ok_or("fixture did not advertise `json_schema_2020_12_tool`")?;
+            require_tool(&tools, "json_schema_echo")?;
+            let _ = session
+                .call_tool("json_schema_echo", &json!({ "schema": schema }))
+                .await?;
+        }
         other => return Err(format!("unsupported conformance scenario `{other}`").into()),
     }
 
