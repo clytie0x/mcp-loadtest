@@ -106,6 +106,7 @@ fn sample_report() -> Report {
             actual: "123.4ms".to_string(),
         }],
         coverage: None,
+        per_tool: Default::default(),
     }
 }
 

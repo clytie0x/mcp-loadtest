@@ -51,3 +51,7 @@ thiserror = { workspace = true }
 # `smoke.rs` / `serve_smoke.rs` drive the built binary over async stdio; both
 # use only tokio + serde_json (the latter comes from the normal deps above).
 tokio = { workspace = true }
+
+[[test]]
+name = "serve_tools"
+required-features = ["serve"]

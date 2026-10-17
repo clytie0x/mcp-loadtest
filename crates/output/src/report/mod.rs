@@ -13,4 +13,6 @@ pub mod wire;
 
 pub(crate) mod common;
 
+pub use common::failure_reasons;
+
 pub use mcp_loadtest_core::report::*;

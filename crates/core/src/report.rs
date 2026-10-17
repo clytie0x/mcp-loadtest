@@ -6,6 +6,7 @@
 //! reporter), Agent H (Run orchestrator that builds Report). Other agents
 //! consume via the LOCKED types below.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -46,6 +47,10 @@ pub struct Report {
     /// up (e.g. older runs deserialized from disk). M7 differentiator.
     #[serde(default)]
     pub coverage: Option<CoverageReport>,
+    /// Aggregates per tool name, as recorded through `Recorder::record_tool`.
+    /// `cold_start` records its handshake under `cold_start:handshake`.
+    #[serde(default)]
+    pub per_tool: BTreeMap<String, ScenarioMetrics>,
 }
 
 impl Report {
@@ -330,6 +335,7 @@ mod tests {
             trace_path: None,
             threshold_violations: Vec::new(),
             coverage: None,
+            per_tool: Default::default(),
         }
     }
 

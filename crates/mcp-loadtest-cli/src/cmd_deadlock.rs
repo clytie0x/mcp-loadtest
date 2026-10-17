@@ -188,6 +188,7 @@ mod tests {
             trace_path: None,
             threshold_violations: Vec::new(),
             coverage: None,
+            per_tool: Default::default(),
         };
 
         let error = ensure_deadlock_probe_passed(&report)

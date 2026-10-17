@@ -67,12 +67,24 @@ pub(crate) fn format_server_command(report: &Report) -> String {
     s
 }
 
-/// Build the parenthesised reason that follows the `FAIL` badge. Mentions
-/// every signal that contributed (deadlocks first since they're the loudest).
+/// Build the parenthesised reason that follows the `FAIL` badge.
 ///
 /// Used by both markdown and terminal reporters so the wording stays
 /// consistent.
 pub(crate) fn describe_failure(report: &Report) -> String {
+    let reasons = failure_reasons(report);
+    if reasons.is_empty() {
+        // Defensive fallback for a future unconditional Report::passed signal
+        // that this formatter has not learned yet.
+        return "unspecified failure".to_string();
+    }
+    reasons.join(", ")
+}
+
+/// Every signal that makes `report` fail, deadlocks first since they're the
+/// loudest. Empty for a passing report. The `serve --mcp` tools return this
+/// list so an agent can act on the reasons without parsing prose.
+pub fn failure_reasons(report: &Report) -> Vec<String> {
     let dc = report.scenario_outcome.deadlock_count;
     let divergences = report.scenario_outcome.divergence_count;
     let tv = report.threshold_violations.len();
@@ -144,12 +156,7 @@ pub(crate) fn describe_failure(report: &Report) -> String {
             if tv == 1 { "violation" } else { "violations" }
         ));
     }
-    if parts.is_empty() {
-        // Defensive fallback for a future unconditional Report::passed signal
-        // that this formatter has not learned yet.
-        return "unspecified failure".to_string();
-    }
-    parts.join(", ")
+    parts
 }
 
 #[cfg(test)]

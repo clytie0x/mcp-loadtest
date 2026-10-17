@@ -354,6 +354,7 @@ mod tests {
                 actual: "123.4ms".to_string(),
             }],
             coverage: None,
+            per_tool: Default::default(),
         }
     }
 

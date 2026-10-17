@@ -159,8 +159,10 @@ thresholds, and baseline gating.
 - **Regression analysis** — compare two `metrics.json` reports and gate on
   p99, error-rate, and deadlock regressions.
 - **CI and observability** — JSON, JUnit, and Prometheus outputs.
-- **Agent access** — `mcp-loadtest serve --mcp` exposes deadlock, sustained
-  load, and comparison tools over MCP.
+- **Agent access** — `mcp-loadtest serve --mcp` lets an agent list a target's
+  tools, run `deadlock_probe`, `race_check`, `cold_start`, and
+  `sustained_load`, and compare runs. Every run tool returns `passed` plus
+  machine-readable `failure_reasons`.
 
 ## Built-in scenarios
 

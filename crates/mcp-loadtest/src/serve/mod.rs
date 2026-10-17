@@ -304,7 +304,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_list_advertises_three_tools() {
+    async fn tools_list_advertises_the_detector_tools() {
         let line = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#;
         let resp = handle_line(line).await.expect("tools/list must respond");
         let tools = resp["result"]["tools"]
@@ -314,9 +314,14 @@ mod tests {
             .iter()
             .filter_map(|t| t.get("name").and_then(Value::as_str))
             .collect();
-        assert!(names.contains(&"deadlock_probe"));
-        assert!(names.contains(&"sustained_load"));
-        assert!(names.contains(&"compare_runs"));
+        for name in [
+            "list_target_tools",
+            "deadlock_probe",
+            "race_check",
+            "cold_start",
+        ] {
+            assert!(names.contains(&name), "missing {name}: {names:?}");
+        }
     }
 
     #[tokio::test]

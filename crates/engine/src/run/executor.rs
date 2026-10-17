@@ -471,13 +471,14 @@ impl Run {
             trace_path,
             threshold_violations: Vec::new(),
             coverage: Some(coverage),
+            per_tool,
         };
 
         // Evaluate thresholds — global + per-tool SLO entries.
         report.threshold_violations = thresholds::evaluate_thresholds(&config, &report);
         report
             .threshold_violations
-            .extend(thresholds::evaluate_tool_slos(&config, &per_tool));
+            .extend(thresholds::evaluate_tool_slos(&config, &report.per_tool));
 
         // 10. Return Report.
         Ok(report)

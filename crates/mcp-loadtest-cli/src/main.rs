@@ -1,6 +1,6 @@
 //! `mcp-loadtest` CLI — entry point. Subcommands are the `Cmd` variants
 //! below (their `///` docs are the `--help` text): `example-config`, `run`,
-//! `deadlock-probe`, `compare`, `replay`, `cross`, `list-scenarios`,
+//! `deadlock-probe`, `compare`, `replay`, `list-scenarios`,
 //! `doctor`, `serve`.
 //!
 //! Global `--explain` prints a static per-subcommand description (DESIGN
@@ -173,9 +173,9 @@ pub(crate) enum Cmd {
 
     /// Expose mcp-loadtest itself AS an MCP server over stdio.
     ///
-    /// Lets AI agents (Claude Code, Cursor, ...) drive load tests by calling
-    /// `deadlock_probe` / `sustained_load` / `compare_runs` tools. See
-    /// DESIGN §21.2.
+    /// Lets AI agents (Claude Code, Cursor, ...) probe servers by calling
+    /// `list_target_tools`, `deadlock_probe`, `race_check`, `cold_start`,
+    /// `sustained_load`, and `compare_runs`. See DESIGN §21.2.
     Serve {
         /// Speak the MCP protocol over stdio. Default and currently the only
         /// supported variant — HTTP/SSE serve modes are deferred.

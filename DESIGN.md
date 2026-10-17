@@ -1394,13 +1394,23 @@ mcp-loadtest is a tool that AI agents will both **operate** (Claude Code running
 
 ### 21.2 Self-hosted MCP server: `mcp-loadtest serve --mcp`
 
-The stdio serve mode exposes exactly three tools:
+Agents are the primary users of this mode. It exposes six tools, listed in
+the order an agent typically calls them:
 
-| Tool               | Args                                                            | Returns                                            |
-| ------------------ | --------------------------------------------------------------- | -------------------------------------------------- |
-| `deadlock_probe`   | `server_command`, `tool`, `concurrent`                          | `{ deadlock_count, hung_for_ms[], details }`       |
-| `sustained_load`   | `server_command`, `concurrent`, `duration_secs`, `tool`, `args` | `{ p50_ms, p99_ms, error_rate, requests_per_sec }` |
-| `compare_runs`     | `baseline_run_dir`, `current_run_dir`                           | structured diff with regression flags              |
+| Tool                | Args                                                                     | Returns (besides the verdict fields)                 |
+| ------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------- |
+| `list_target_tools` | `server_command`                                                         | `{ protocol_version, tool_count, tools[] }`          |
+| `deadlock_probe`    | `server_command`, `tool`, `concurrent`, `hang_threshold_ms`, `grace_period_ms`, `args` | `{ deadlock_count, hang_count, hung_for_ms[] }` |
+| `race_check`        | `server_command`, `tool`, `concurrent`, `args`                           | `{ divergence_count, hang_count }`                   |
+| `cold_start`        | `server_command`, `tool`, `iterations`, `warmup`, `args`                 | `{ handshake, first_call }` latency summaries        |
+| `sustained_load`    | `server_command`, `tool`, `concurrent`, `duration_ms`, `args`            | `{ p50_ms … p999_ms, error_rate, requests_per_sec }` |
+| `compare_runs`      | `baseline`, `current`, regression-threshold overrides                    | structured diff with regression flags                |
+
+Every run tool also returns the same verdict fields: `passed`,
+`failure_reasons` (empty exactly when `passed` is true), `total_calls`,
+`successful_calls`, `error_count`, `incomplete_worker_count`,
+`teardown_failure_count`, `threshold_violation_count`, `notes`, and `run_id`.
+Results go in both `structuredContent` and a JSON text block.
 
 A user can ask an MCP-aware agent to call `deadlock_probe` and receive
 structured JSON. The operator remains responsible for authorizing the server

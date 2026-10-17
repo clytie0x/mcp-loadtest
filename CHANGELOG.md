@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `serve --mcp` tools for agents: `list_target_tools` returns the target's
+  `tools/list` so an agent can pick a tool to probe, `race_check` runs the
+  divergence detector, and `cold_start` times the handshake and the first
+  call separately. Every run tool now returns `failure_reasons`, a list of
+  the signals that failed the run (empty when `passed` is true), plus the
+  shared counters and `notes`. Existing output keys are unchanged.
+- `Report::per_tool` carries per-tool metrics, which the executor already
+  computed for coverage and per-tool SLOs.
+- `mcp_loadtest::report::failure_reasons` exposes the reasons the terminal
+  and Markdown reports print after `FAIL`.
+
 ### Fixed
 
 - `[server.env]` and `[server] working_dir` were parsed but never applied, so

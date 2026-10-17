@@ -134,6 +134,7 @@ fn pass_report() -> Report {
         trace_path: Some(PathBuf::from("./trace.jsonl")),
         threshold_violations: vec![],
         coverage: None,
+        per_tool: Default::default(),
     }
 }
 
@@ -165,6 +166,7 @@ fn fail_report() -> Report {
             actual: "123.4ms".to_string(),
         }],
         coverage: None,
+        per_tool: Default::default(),
     }
 }
 
@@ -340,6 +342,7 @@ fn empty_report() -> Report {
         trace_path: None,
         threshold_violations: vec![],
         coverage: None,
+        per_tool: Default::default(),
     }
 }
 
