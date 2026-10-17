@@ -66,6 +66,7 @@ fn render_inner(report: &Report) -> Result<String, std::fmt::Error> {
     write_latency(&mut out, report)?;
     write_errors(&mut out, &report.metrics.outcomes)?;
     write_process(&mut out, report)?;
+    write_notes(&mut out, &report.scenario_outcome.notes)?;
     write_trace(&mut out, report)?;
 
     Ok(out)
@@ -241,8 +242,11 @@ fn write_errors(out: &mut String, outcomes: &OutcomeCounts) -> std::fmt::Result 
 
 fn write_process(out: &mut String, report: &Report) -> std::fmt::Result {
     let p = &report.process;
-    // Skip the section if no sampling happened — keeps short reports tidy.
-    if p.samples.is_empty() && p.peak_rss_mb == 0.0 && p.final_rss_mb == 0.0 {
+    // No samples means the sampler never measured this workload; say so
+    // rather than print zeroed stats as readings.
+    if p.samples.is_empty() {
+        writeln!(out, "  process:   {}", style("not sampled").dim())?;
+        writeln!(out)?;
         return Ok(());
     }
 
@@ -259,6 +263,17 @@ fn write_process(out: &mut String, report: &Report) -> std::fmt::Result {
     )?;
     writeln!(out)?;
 
+    Ok(())
+}
+
+fn write_notes(out: &mut String, notes: &[String]) -> std::fmt::Result {
+    if notes.is_empty() {
+        return Ok(());
+    }
+    for note in notes {
+        writeln!(out, "  note:      {note}")?;
+    }
+    writeln!(out)?;
     Ok(())
 }
 
@@ -280,7 +295,8 @@ mod tests {
     use console::set_colors_enabled;
 
     use crate::report::{
-        ProcessStats, Report, Reporter, ServerInfo, ThresholdKind, ThresholdViolation,
+        ProcessSample, ProcessStats, Report, Reporter, ServerInfo, ThresholdKind,
+        ThresholdViolation,
     };
     use mcp_loadtest_core::metrics::{
         LatencyStats, OutcomeCounts, ScenarioMetrics, ThroughputStats,
@@ -329,7 +345,13 @@ mod tests {
                 peak_rss_mb: 156.3,
                 final_rss_mb: 142.1,
                 avg_cpu_pct: 23.4,
-                samples: vec![],
+                samples: vec![ProcessSample {
+                    at_secs: 0.5,
+                    rss_mb: 142.1,
+                    cpu_pct: 23.4,
+                    fd: 0,
+                    threads: 0,
+                }],
                 ..Default::default()
             },
             scenario_outcome: ScenarioOutcome::default(),
@@ -446,12 +468,13 @@ mod tests {
     }
 
     #[test]
-    fn process_section_omitted_when_no_samples_and_zero_metrics() {
+    fn process_section_says_not_sampled_when_no_samples() {
         set_colors_enabled(false);
         let mut report = sample_report();
         report.process = ProcessStats::default();
         let s = TerminalReporter.render(&report).unwrap();
-        assert!(!s.contains("process:"));
+        assert!(s.contains("process:   not sampled"), "{s}");
+        assert!(!s.contains("0.0 MB"), "{s}");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 ---
 source: crates/output/tests/reporter_snapshots.rs
-assertion_line: 287
+assertion_line: 417
 expression: s
 ---
 mcp-loadtest run summary
@@ -17,3 +17,5 @@ mcp-loadtest run summary
     p95:     0µs
     p99:     0µs
     max:     0µs
+
+  process:   not sampled

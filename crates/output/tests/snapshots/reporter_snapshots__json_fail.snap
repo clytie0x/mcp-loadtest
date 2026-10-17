@@ -62,5 +62,8 @@ expression: j
       "actual": "123.4ms"
     }
   ],
+  "notes": [
+    "one of three deadlocks occurred at 23s"
+  ],
   "passed": false
 }

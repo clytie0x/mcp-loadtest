@@ -25,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `markitdown-mcp` (about 5 s to start) hit the second on every run.
   New `Transport::recv_response` (default: unsupported) lets stream
   transports read that reply.
+- Reports no longer print zeroed process stats as readings. When no process
+  samples were taken (pooled stdio runs, whose workload runs outside the
+  sampled PID), the Markdown report says "Process metrics were not
+  sampled", the terminal summary says `process: not sampled`, and
+  `metrics.json` adds `"sampled": false` to `process`. Scenario notes,
+  including the reason metrics are unavailable, now appear in a Markdown
+  `## Notes` section, as `note:` lines in the terminal summary, and as an
+  optional `notes` array in `metrics.json`. Both JSON fields are additive
+  and omitted in the common case. Found during Phase 1 field runs, where
+  pooled stdio runs showed `Peak RSS: 0.0 MB · Avg CPU: 0.0%`.
 - The `serve_smoke` test now honours `CARGO_TARGET_DIR` when locating and
   building the CLI binary (#5).
 

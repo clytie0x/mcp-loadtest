@@ -62,6 +62,9 @@ pub struct MetricsDocumentV1 {
     /// Configured threshold violations.
     #[serde(default)]
     pub threshold_violations: Vec<ThresholdDocumentV1>,
+    /// Free-form scenario notes. Omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
     /// Overall correctness and threshold verdict.
     #[serde(default)]
     pub passed: bool,
@@ -108,6 +111,7 @@ impl From<&Report> for MetricsDocumentV1 {
                 .iter()
                 .map(ThresholdDocumentV1::from)
                 .collect(),
+            notes: report.scenario_outcome.notes.clone(),
             passed: report.passed(),
         }
     }
@@ -281,6 +285,10 @@ pub struct ProcessDocumentV1 {
     pub final_rss_mb: f64,
     /// Mean CPU percentage.
     pub avg_cpu_pct: f64,
+    /// `false` when no process samples were taken, so the values above are
+    /// zero placeholders rather than readings. Omitted when `true`.
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub sampled: bool,
 }
 
 impl From<&ProcessStats> for ProcessDocumentV1 {
@@ -289,6 +297,7 @@ impl From<&ProcessStats> for ProcessDocumentV1 {
             peak_rss_mb: process.peak_rss_mb,
             final_rss_mb: process.final_rss_mb,
             avg_cpu_pct: process.avg_cpu_pct,
+            sampled: !process.samples.is_empty(),
         }
     }
 }
@@ -325,4 +334,12 @@ fn milliseconds(duration: Duration) -> f64 {
 
 fn is_zero_u64(value: &u64) -> bool {
     *value == 0
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }

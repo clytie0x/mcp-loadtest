@@ -22,4 +22,6 @@ mcp-loadtest run summary
 
   process:   peak=156.3 MB · final=142.1 MB · cpu=23.4%
 
+  note:      one of three deadlocks occurred at 23s
+
   trace:     ./trace.jsonl

@@ -18,7 +18,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use mcp_loadtest_core::metrics::{LatencyStats, OutcomeCounts, ScenarioMetrics, ThroughputStats};
 use mcp_loadtest_core::outcome::ScenarioOutcome;
 use mcp_loadtest_core::report::{
-    ProcessStats, Report, Reporter, ServerInfo, ThresholdKind, ThresholdViolation,
+    ProcessSample, ProcessStats, Report, Reporter, ServerInfo, ThresholdKind, ThresholdViolation,
 };
 use mcp_loadtest_output::report::html::HtmlReporter;
 use mcp_loadtest_output::report::json::JsonReporter;
@@ -100,7 +100,13 @@ fn process_stats() -> ProcessStats {
         peak_rss_mb: 156.3,
         final_rss_mb: 142.1,
         avg_cpu_pct: 23.4,
-        samples: vec![],
+        samples: vec![ProcessSample {
+            at_secs: 0.5,
+            rss_mb: 142.1,
+            cpu_pct: 23.4,
+            fd: 0,
+            threads: 0,
+        }],
         ..Default::default()
     }
 }
@@ -254,6 +260,45 @@ fn reporters_expose_expected_fuzzer_rejections_as_successes() {
         html.contains("<strong>Expected rejections:</strong> 2"),
         "{html}"
     );
+}
+
+#[test]
+fn reporters_disclose_unsampled_process_metrics_and_notes() {
+    let note = "process metrics unavailable: workload used 4 factory-spawned stdio \
+                session(s) outside the single-PID sampler";
+    let mut report = pass_report();
+    report.process = ProcessStats::default();
+    report.scenario_outcome.notes = vec![note.to_owned()];
+
+    let markdown = MarkdownReporter
+        .render(&report)
+        .expect("render unsampled markdown report");
+    assert!(!markdown.contains("Peak RSS: 0.0 MB"), "{markdown}");
+    assert!(
+        markdown.contains("_Process metrics were not sampled._"),
+        "{markdown}"
+    );
+    assert!(markdown.contains(&format!("- {note}")), "{markdown}");
+
+    console::set_colors_enabled(false);
+    let terminal = TerminalReporter
+        .render(&report)
+        .expect("render unsampled terminal report");
+    assert!(terminal.contains("process:   not sampled"), "{terminal}");
+    assert!(
+        terminal.contains(&format!("note:      {note}")),
+        "{terminal}"
+    );
+
+    let json = JsonReporter.render(&report).expect("render unsampled JSON");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("valid report json");
+    assert_eq!(value["process"]["sampled"], false, "{json}");
+    assert_eq!(value["notes"][0], note, "{json}");
+
+    let sampled = JsonReporter.render(&pass_report()).expect("render JSON");
+    let value: serde_json::Value = serde_json::from_str(&sampled).expect("valid report json");
+    assert!(value["process"].get("sampled").is_none(), "{sampled}");
+    assert!(value.get("notes").is_none(), "{sampled}");
 }
 
 #[test]

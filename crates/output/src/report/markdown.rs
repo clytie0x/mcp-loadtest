@@ -50,6 +50,7 @@ fn render_inner(report: &Report) -> Result<String, std::fmt::Error> {
     write_latency(&mut out, report)?;
     write_errors(&mut out, &report.metrics.outcomes)?;
     write_process(&mut out, report)?;
+    write_notes(&mut out, &report.scenario_outcome.notes)?;
     write_threshold_violations(&mut out, &report.threshold_violations)?;
     write_trace(&mut out, report)?;
 
@@ -197,11 +198,29 @@ fn write_errors(out: &mut String, outcomes: &OutcomeCounts) -> std::fmt::Result 
 fn write_process(out: &mut String, report: &Report) -> std::fmt::Result {
     let p = &report.process;
     writeln!(out, "## Process")?;
-    writeln!(
-        out,
-        "Peak RSS: {:.1} MB · Final RSS: {:.1} MB · Avg CPU: {:.1}%",
-        p.peak_rss_mb, p.final_rss_mb, p.avg_cpu_pct,
-    )?;
+    // No samples means the sampler never measured this workload (for
+    // example a pooled stdio run); its zeroed stats are not readings.
+    if p.samples.is_empty() {
+        writeln!(out, "_Process metrics were not sampled._")?;
+    } else {
+        writeln!(
+            out,
+            "Peak RSS: {:.1} MB · Final RSS: {:.1} MB · Avg CPU: {:.1}%",
+            p.peak_rss_mb, p.final_rss_mb, p.avg_cpu_pct,
+        )?;
+    }
+    writeln!(out)?;
+    Ok(())
+}
+
+fn write_notes(out: &mut String, notes: &[String]) -> std::fmt::Result {
+    if notes.is_empty() {
+        return Ok(());
+    }
+    writeln!(out, "## Notes")?;
+    for note in notes {
+        writeln!(out, "- {note}")?;
+    }
     writeln!(out)?;
     Ok(())
 }
