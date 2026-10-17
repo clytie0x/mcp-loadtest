@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The `serve_smoke` test now honours `CARGO_TARGET_DIR` when locating and
+  building the CLI binary (#5).
+
 ### Removed
 
 - Distributed load generation over OpenSSH workers: the

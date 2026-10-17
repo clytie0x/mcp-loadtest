@@ -25,21 +25,20 @@ fn cli_binary_path() -> PathBuf {
     } else {
         "mcp-loadtest"
     };
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
+    // Honour CARGO_TARGET_DIR (relative values resolve against the workspace
+    // root, as cargo does) so the lookup and the fallback build agree.
+    let target_dir = match std::env::var_os("CARGO_TARGET_DIR") {
+        Some(dir) => workspace_root.join(dir),
+        None => workspace_root.join("target"),
+    };
     let candidates = [
-        // workspace target dir from a `cargo test --workspace` invocation
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("debug")
-            .join(exe_name),
+        // target dir from a `cargo test --workspace` invocation
+        target_dir.join("debug").join(exe_name),
         // release fallback
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("release")
-            .join(exe_name),
+        target_dir.join("release").join(exe_name),
     ];
     for c in &candidates {
         if c.is_file() {
@@ -48,9 +47,6 @@ fn cli_binary_path() -> PathBuf {
     }
     // Last resort: best-effort build. Quiet so we don't pollute test output
     // unless something goes very wrong.
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..");
     let status = std::process::Command::new("cargo")
         .args(["build", "-p", "mcp-loadtest-cli", "--bin", "mcp-loadtest"])
         .current_dir(&workspace_root)
