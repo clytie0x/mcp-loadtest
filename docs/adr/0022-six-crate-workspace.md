@@ -122,3 +122,12 @@ crates directly needs the new canonical homes.
 Open question: whether to later promote a stable subset of the layer crates to
 their own semver track (publishing them to crates.io independently). Deferred —
 today only the facade + CLI are distributed (ADR 0015).
+
+## Outcome (2026-10-17)
+
+The workspace is now **seven crates**. `crates/auth` (`mcp-loadtest-auth`, MCP
+2026-07-28 OAuth client primitives) was added in v0.2.0. Like `core`, it imports
+nothing from the workspace; `protocol` and `engine` depend on it. A
+`crates/distributed` crate existed for a while and was removed in `c3f8874`
+together with the OTLP exporter (ADR 0024). The layering rule above is
+unchanged; read the dependency table with `auth` beside `core` at the bottom.

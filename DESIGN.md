@@ -160,20 +160,22 @@ client ← server   {"result":{"content":[{...}]}}
 
 ### Module layout (`crates/`)
 
-The workspace is six layered crates (ADR 0022; strictly downward
-dependencies).
+The workspace is seven layered crates (the six of ADR 0022 plus `auth`;
+strictly downward dependencies).
 
 ```
 crates/
 ├── core/       (mcp-loadtest-core)     # pure data — imports nothing from the workspace
+├── auth/       (mcp-loadtest-auth)     # MCP 2026-07-28 OAuth client primitives — imports nothing from the workspace;
+│   discovery, registration, PKCE, token, scope, loopback callback (used by protocol + engine)
 │   config/ (validate.rs = KNOWN_SCENARIOS / KNOWN_TRANSPORTS), metrics/ (+ Recorder),
 │   report.rs (Report + Reporter + format_iso8601_utc), outcome.rs (ScenarioOutcome),
 │   coverage.rs, fuzz_report.rs, trace/format.rs (on-disk mcp-trace/1), version.rs (ProtocolVersion)
-├── protocol/   (mcp-loadtest-protocol) # wire — imports core
+├── protocol/   (mcp-loadtest-protocol) # wire — imports core + auth
 │   jsonrpc.rs, mcp.rs, schema.rs (strict validator, ADR 0010), session/,
 │   hang_detector.rs, factory.rs (SessionFactory),
 │   transport/ (Transport trait; stdio/, http, sse, ws; guard.rs SSRF ADR 0012; spawn_options ADR 0013)
-├── engine/     (mcp-loadtest-engine)   # scenarios + run — imports core + protocol
+├── engine/     (mcp-loadtest-engine)   # scenarios + run — imports core + protocol + auth
 │   run/ (executor spawn → drive → report; connect; thresholds; factory shim),
 │   process.rs (sysinfo sampler), trace/ (writer + replay runtime), breaking_point.rs, race_detector.rs,
 │   scenario/ (Scenario trait, RunContext; sustained/deadlock_probe/cold_start/version_matrix/
@@ -509,7 +511,7 @@ release gates still apply.
 | **M7** ✓      | Differentiators v2 + release polish | Protocol fuzzer (basic — random/malformed payloads); coverage tracking (tools registered vs. exercised); per-tool SLO assertions; README rewrite with competitive positioning; `cargo install` smoke test on all 3 OS                             |
 | **Post-M7** ✓ | Pre-public-release close-out     | Spike scenario; HTML reporter; WebSocket transport; hot-path zero-copy refactor; criterion benches (DESIGN §19 claims now reproducible). See CHANGELOG.                                                                            |
 | **v0.1.0 RC** | First public-release candidate   | correctness/security hardening, pinned scoped conformance against the final protocol revision, honest docs; still gated before public/tag/Release                                                                                           |
-| _Later_       | Beyond                           | AI-assisted pattern generator; distributed mode; PyO3 binding                                                                                                                                                       |
+| _Later_       | Beyond                           | AI-assisted pattern generator; PyO3 binding (distributed mode was implemented, then removed in 2026-10, ADR 0024)                                                                                                   |
 
 **Definition of done for the first release:**
 
@@ -567,7 +569,7 @@ reaatech/mcp-load-test as of 2026-05-10 (TS monorepo, 77 source files, ~50% of R
 | **Protocol-aware assertions**                               | ✗                                    | ✓ v0.1.0 RC              | Opt-in strict mode validates `tools/call` args vs the server's advertised `inputSchema`; mismatch → `ProtocolError` gates the run. Forward-compatible, off by default (ADR 0005/0010). |
 | **Rust perf** + static binary                               | ✗ (Node runtime required)            | ✓                       | `cargo install` → single ~5MB binary; no Node toolchain.                                                                                                                               |
 | **AI-assisted pattern generator**                           | ✗                                    | ⏳ M8 stretch           | LLM reads tool schemas → generates realistic call sequences.                                                                                                                           |
-| **Distributed mode**                                        | ✗                                    | ⏳ M8 stretch           | Multiple workers driving one server (high-RPS targets).                                                                                                                                |
+| **Distributed mode**                                        | ✗                                    | ✗ removed 2026-10       | Multiple workers driving one server. Removed with the OTLP exporter: generic load tools cover it (ADR 0024).                                                                           |
 | **Replay / record**                                         | ✗                                    | ✓ v0.1.0 RC             | `run --trace` writes `mcp-trace/1`; `replay` diffs canonical responses and gates on divergence.                                                                                         |
 | **Self-hosted as MCP server** (`mcp-loadtest serve --mcp`)  | ✗                                    | ✓ M7                    | AI agents (Claude, Cursor, etc.) call `deadlock_probe` / `compare` / `report` directly via MCP. Recursive: load-test an MCP using an MCP.                                              |
 
@@ -611,7 +613,8 @@ Author's preference: **`mcp-loadtest`** for now. Rename later if needed.
 
 ## 13. Future work (out of scope for the first release candidate)
 
-- **Distributed mode** — multiple loadtest workers driving one server (for very high RPS targets)
+- ~~**Distributed mode**~~ — removed 2026-10 together with the OTLP exporter;
+  multi-machine load generation is a non-goal (ROADMAP, ADR 0024)
 - **GUI/web UI** — render reports interactively
 - **Plugin system** — user-defined scenarios as separate crates
 - **Public benchmark dataset** — track perf of popular MCP servers over time (`mcp-leaderboard`)
@@ -662,9 +665,9 @@ so a future planner can trace the contract. The bullets above remain the broader
    T3.3, ADR 0021 — dependency-cycle rationale); `mcp-fuzz`'s scope is covered
    by the fuzzer's raw-byte variants (plan T3.1). Spinning either out stays
    possible later. (ADR 0004 Path C)
-9. **Later stretch** — distributed multi-worker, PyO3 binding,
-   AI-assisted pattern generator
-   (see §13 list above). (ADR 0004 Path C)
+9. **Later stretch** — PyO3 binding, AI-assisted pattern generator
+   (see §13 list above). Distributed multi-worker was removed in 2026-10
+   (ADR 0024). (ADR 0004 Path C)
 
 ---
 

@@ -27,7 +27,7 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0019](0019-stateless-connection-layer.md)     | Experimental stateless connection layer for MCP 2026-07-28 RC/draft | Accepted; final release truth superseded by 0023 |
 | [0020](0020-publish-to-crates-io.md)           | Proposed crates.io publication (not executed)                         | Proposed; not in force |
 | [0021](0021-trace-record-replay.md)            | Trace record + replay: JSONL `mcp-trace/1`, redaction, replay diff    | Accepted |
-| [0022](0022-six-crate-workspace.md)            | Six-crate layered workspace (core/protocol/engine/output/facade/cli)  | Accepted |
+| [0022](0022-six-crate-workspace.md)            | Six-crate layered workspace (core/protocol/engine/output/facade/cli)  | Accepted; seven crates since v0.2.0 (outcome note) |
 | [0023](0023-mcp-2026-final-reconciliation.md)  | Reconcile the scoped MCP 2026-07-28 implementation to the final tag   | Accepted; scoped experimental implementation |
 | [0024](0024-reposition-as-mcp-bug-detector.md) | Strategy: reposition as an MCP concurrency-bug CI gate (supersedes 0004) | Accepted |
 
