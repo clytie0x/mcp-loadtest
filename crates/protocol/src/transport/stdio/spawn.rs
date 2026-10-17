@@ -124,7 +124,7 @@ impl StdioTransport {
             child: Some(child),
             stdin: Some(stdin),
             stdout: BufReader::new(stdout),
-            line_buf: String::new(),
+            line_buf: Vec::new(),
             stderr_pump,
             pump_cancel,
         })

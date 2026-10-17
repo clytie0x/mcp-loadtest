@@ -78,7 +78,7 @@ pub struct StdioTransport {
     child: Option<Child>,
     stdin: Option<ChildStdin>,
     stdout: BufReader<ChildStdout>,
-    line_buf: String,
+    line_buf: Vec<u8>,
     /// Background task draining the child's stderr into a file (and optionally
     /// teeing to the parent's stderr). `None` when stderr is inherited (the
     /// default — no pump, zero overhead). Owned here so `shutdown`/`Drop` can
@@ -131,7 +131,10 @@ impl StdioTransport {
             if n == 0 {
                 return Err(TransportError::Closed);
             }
-            let line = self.line_buf.trim_end();
+            // Invalid UTF-8 becomes U+FFFD so the JSON parser rejects the
+            // frame instead of the whole transport aborting on one bad byte.
+            let line = String::from_utf8_lossy(&self.line_buf);
+            let line = line.trim_end();
             if is_notification_frame(line) {
                 continue;
             }
@@ -193,9 +196,9 @@ impl Drop for StdioTransport {
     }
 }
 
-// `read_bounded_line` (the L-2 OOM guard) + its `push_utf8_lossy` helper live
-// in `reader.rs`, a child module declared above, so this file stays under the
-// 300-line production convention. See ADR 0013.
+// `read_bounded_line` (the L-2 OOM guard) lives in `reader.rs`, a child module
+// declared above, so this file stays under the 300-line production
+// convention. See ADR 0013.
 
 // Pure classifier tests — no process spawn, so they run on every platform
 // (unlike the unix-gated loopback below).

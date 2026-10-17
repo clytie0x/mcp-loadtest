@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The stdio transport no longer corrupts multi-byte UTF-8 characters that
+  straddle two 8 KiB reads. It decoded each chunk separately, so a Thai or
+  CJK character on a chunk boundary in a long response became U+FFFD, which
+  could also make `race_check` report a false divergence. The reader now
+  collects raw bytes and decodes each line once, which also drops a
+  per-chunk allocation.
 - `[server.env]` and `[server] working_dir` were parsed but never applied, so
   every stdio server (the run session and every pooled session) started with
   the parent's environment and directory. `SpawnOptions` now carries both and
