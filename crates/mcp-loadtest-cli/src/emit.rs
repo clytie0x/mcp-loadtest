@@ -1,11 +1,10 @@
-//! Report emission helper — fans a `Report` out to terminal/markdown/json/html
-//! sinks based on the format list from a config or subcommand default.
+//! Report emission helper — fans a `Report` out to terminal/markdown/json/junit/
+//! prometheus sinks based on the format list from a config or subcommand default.
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use mcp_loadtest::report::html::HtmlReporter;
 use mcp_loadtest::report::json::JsonReporter;
 use mcp_loadtest::report::junit::JunitReporter;
 use mcp_loadtest::report::markdown::MarkdownReporter;
@@ -33,11 +32,6 @@ pub(crate) fn emit_reports(report: &Report, formats: &[String], output_dir: &Pat
             "json" => {
                 let s = JsonReporter.render(report)?;
                 let path = run_dir.join("metrics.json");
-                std::fs::write(&path, s).with_context(|| format!("writing {}", path.display()))?;
-            }
-            "html" => {
-                let s = HtmlReporter.render(report)?;
-                let path = run_dir.join("report.html");
                 std::fs::write(&path, s).with_context(|| format!("writing {}", path.display()))?;
             }
             "junit" => {

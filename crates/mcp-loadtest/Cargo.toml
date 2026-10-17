@@ -19,8 +19,8 @@ exclude = [
     "CLAUDE.md",
 ]
 
-# docs.rs builds with all features so the feature-gated `serve` / `tui`
-# modules render in the published API docs.
+# docs.rs builds with all features so the feature-gated `serve`
+# module renders in the published API docs.
 [package.metadata.docs.rs]
 all-features = true
 
@@ -28,16 +28,12 @@ all-features = true
 workspace = true
 
 [features]
-# Library-only consumers get a slim build (no MCP-server mode, no TUI).
-# The CLI binary opts in to both — see crates/mcp-loadtest-cli/Cargo.toml.
+# Library-only consumers get a slim build (no MCP-server mode).
+# The CLI binary opts in — see crates/mcp-loadtest-cli/Cargo.toml.
 default = []
 # Self-hosted MCP server mode (`mcp-loadtest serve --mcp`). Gates the
 # `pub mod serve` declaration in lib.rs. See ADR 0005.
 serve = []
-# Live-polling Ratatui dashboard. Forwards to the output crate's `tui`
-# feature (which activates `ratatui` + `crossterm`) and re-exports its `tui`
-# module from lib.rs.
-tui = ["mcp-loadtest-output/tui"]
 
 [dependencies]
 mcp-loadtest-core = { path = "../core", version = "0.2.0" }

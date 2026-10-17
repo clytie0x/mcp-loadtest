@@ -220,9 +220,8 @@ pub mod cold_start;
 pub mod deadlock_probe;
 pub mod pattern;
 pub mod race_check;
-pub mod ramp;
-pub mod soak;
 pub mod sustained;
+pub mod version_matrix;
 pub mod cache_warmup;   // ← new
 ```
 

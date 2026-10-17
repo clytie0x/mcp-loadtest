@@ -24,7 +24,6 @@ pub(crate) struct OutcomeCounters {
     pub(crate) malformed: AtomicU64,
     pub(crate) disconnected: AtomicU64,
     pub(crate) cancelled: AtomicU64,
-    pub(crate) expected_rejection: AtomicU64,
 }
 
 impl OutcomeCounters {
@@ -42,7 +41,6 @@ impl OutcomeCounters {
             CallOutcome::Malformed => &self.malformed,
             CallOutcome::Disconnected => &self.disconnected,
             CallOutcome::Cancelled => &self.cancelled,
-            CallOutcome::ExpectedRejection => &self.expected_rejection,
         };
         // Relaxed is sufficient: we never use these counters to synchronize
         // with other memory accesses, only to read them at snapshot time.
@@ -63,7 +61,6 @@ impl OutcomeCounters {
             malformed: self.malformed.load(Ordering::Relaxed),
             disconnected: self.disconnected.load(Ordering::Relaxed),
             cancelled: self.cancelled.load(Ordering::Relaxed),
-            expected_rejection: self.expected_rejection.load(Ordering::Relaxed),
         }
     }
 }
@@ -81,7 +78,6 @@ pub(crate) struct OutcomeSnapshot {
     pub(crate) malformed: u64,
     pub(crate) disconnected: u64,
     pub(crate) cancelled: u64,
-    pub(crate) expected_rejection: u64,
 }
 
 impl OutcomeSnapshot {
@@ -97,7 +93,6 @@ impl OutcomeSnapshot {
             + self.malformed
             + self.disconnected
             + self.cancelled
-            + self.expected_rejection
     }
 }
 
@@ -129,7 +124,6 @@ mod tests {
         c.bump(CallOutcome::Malformed);
         c.bump(CallOutcome::Disconnected);
         c.bump(CallOutcome::Cancelled);
-        c.bump(CallOutcome::ExpectedRejection);
         let s = c.snapshot();
         assert_eq!(s.success, 2);
         assert_eq!(s.hang, 1);
@@ -141,9 +135,8 @@ mod tests {
         assert_eq!(s.malformed, 1);
         assert_eq!(s.disconnected, 1);
         assert_eq!(s.cancelled, 1);
-        assert_eq!(s.expected_rejection, 1);
-        // 2 + 1*10 = 12 bumps total
-        assert_eq!(s.total(), 12);
+        // 2 + 1*9 = 11 bumps total
+        assert_eq!(s.total(), 11);
     }
 
     #[test]

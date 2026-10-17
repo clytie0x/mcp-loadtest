@@ -1,10 +1,10 @@
 //! SSRF host-allowlist + always-on private/loopback/link-local IP-literal
-//! block for the outbound network transports (http / sse / ws).
+//! block for the outbound network transports (http / sse).
 //!
 //! See ADR 0012. The guard runs *before* any socket is opened: every transport
 //! parses its URL, then runs it through `super::resolve::resolve_and_check`
 //! (which calls [`HostGuard::check_url`] first) before building the reqwest
-//! client / dialing the WebSocket.
+//! client.
 //!
 //! ## Threat model
 //!
@@ -31,8 +31,8 @@ use super::TransportError;
 /// Host-allowlist + private-IP guard. Construct via [`HostGuard::from_config`].
 ///
 /// This is part of the public API: the outbound transports
-/// ([`super::http::HttpTransport`], [`super::sse::SseTransport`],
-/// [`super::ws::WsTransport`]) take `&HostGuard` in their `connect`
+/// ([`super::http::HttpTransport`], [`super::sse::SseTransport`]) take
+/// `&HostGuard` in their `connect`
 /// constructors, so callers that build transports directly need to construct
 /// one. See ADR 0012 for the threat model.
 #[derive(Debug, Clone)]

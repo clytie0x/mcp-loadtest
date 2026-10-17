@@ -31,9 +31,9 @@ allow = [
     "Zlib",
     "MPL-2.0",
     "0BSD",
-    # webpki-roots (0.26 + 1.0, via tokio-tungstenite rustls-tls-webpki-roots)
-    # ships Mozilla's CA bundle under CDLA-Permissive-2.0 — a permissive,
-    # publish-safe data license. See ADR 0011.
+    # webpki-roots (via reqwest rustls-tls) ships Mozilla's CA bundle under
+    # CDLA-Permissive-2.0 — a permissive, publish-safe data license. See
+    # ADR 0011.
     "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.93

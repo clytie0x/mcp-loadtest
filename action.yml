@@ -3,8 +3,8 @@ name: "mcp-loadtest"
 # docs/examples/ci-integration.md. (Install details: prebuilt binary,
 # sha256-verified, cargo-install fallback.)
 description: >-
-  Load-test an MCP server in CI: deadlock probe, sustained load, cross-server
-  compare, or doctor. Fails the job on regression.
+  Probe an MCP server in CI for deadlocks, hangs, and divergent responses, or
+  run a load config. Fails the job on regression.
 author: "Teerapat Vatpitak"
 branding:
   icon: "activity"
@@ -20,8 +20,7 @@ inputs:
     default: "v0.2.0"
   command:
     description: >-
-      Subcommand to run: "deadlock-probe" (default), "run", "cross", or
-      "doctor". For "run", pass `--config <file>` via `args` — the server is
+      Subcommand to run: "deadlock-probe" (default), "run", or "doctor". For "run", pass `--config <file>` via `args` — the server is
       defined in the TOML config.
     required: false
     default: "deadlock-probe"
@@ -49,7 +48,7 @@ inputs:
       Optional path to a baseline metrics.json. When set, the action also
       runs `mcp-loadtest compare <baseline> <current>/metrics.json` after a
       single-report `run` or `deadlock-probe` invocation and fails on
-      regression. Rejected for `cross` (multiple reports) and `doctor` (none).
+      regression. Rejected for `doctor` (no report).
     required: false
     default: ""
   working-directory:
@@ -61,9 +60,8 @@ outputs:
   report-dir:
     description: >-
       Exact directory created by this invocation for `run` and
-      `deadlock-probe`; the private Action-owned report root for multi-report
-      `cross`; empty for `doctor`. Never selected from a shared or pre-existing
-      report root.
+      `deadlock-probe`; empty for `doctor`. Never selected from a shared or
+      pre-existing report root.
     value: ${{ steps.run.outputs.report-dir }}
   passed:
     description: >-
@@ -205,16 +203,16 @@ runs:
         printf 'report-dir=\npassed=false\n' >> "$GITHUB_OUTPUT"
 
         case "${INPUT_COMMAND}" in
-          run|deadlock-probe|cross|doctor) ;;
+          run|deadlock-probe|doctor) ;;
           *)
-            echo "::error::unsupported command; expected deadlock-probe, run, cross, or doctor"
+            echo "::error::unsupported command; expected deadlock-probe, run, or doctor"
             exit 2
             ;;
         esac
 
         argv=(mcp-loadtest "${INPUT_COMMAND}")
         case "${INPUT_COMMAND}" in
-          deadlock-probe|cross|doctor) argv+=(--server "${INPUT_SERVER}") ;;
+          deadlock-probe|doctor) argv+=(--server "${INPUT_SERVER}") ;;
           run) ;; # server comes from the TOML config passed via `args`
         esac
 
@@ -250,7 +248,7 @@ runs:
           exit 2
         fi
         case "${INPUT_COMMAND}" in
-          deadlock-probe|cross)
+          deadlock-probe)
             argv+=(--output-dir "${MCP_LOADTEST_REPORT_ROOT}")
             ;;
           run)
@@ -276,24 +274,12 @@ runs:
             discovery_status=1
           else
             run_dir_count="${#MCP_LOADTEST_RUN_DIRS[@]}"
-            case "${MCP_LOADTEST_REPORT_MODE}" in
-              single)
-                if [ "$run_dir_count" -eq 1 ]; then
-                  report_dir="${MCP_LOADTEST_RUN_DIRS[0]}"
-                else
-                  echo "::error::command did not create exactly one report in the Action-owned directory"
-                  discovery_status=1
-                fi
-                ;;
-              multiple)
-                if [ "$run_dir_count" -ge 1 ]; then
-                  report_dir="${MCP_LOADTEST_REPORT_ROOT}"
-                else
-                  echo "::error::cross did not create a report in the Action-owned directory"
-                  discovery_status=1
-                fi
-                ;;
-            esac
+            if [ "$run_dir_count" -eq 1 ]; then
+              report_dir="${MCP_LOADTEST_RUN_DIRS[0]}"
+            else
+              echo "::error::command did not create exactly one report in the Action-owned directory"
+              discovery_status=1
+            fi
           fi
         fi
 

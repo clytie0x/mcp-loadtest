@@ -90,13 +90,6 @@ fn write_summary(out: &mut String, report: &Report) -> std::fmt::Result {
     writeln!(out, "- Total requests: {}", fmt_count(total))?;
     writeln!(out, "- Throughput: {:.2} req/s", tp.requests_per_sec)?;
     writeln!(out, "- Error rate: {error_rate:.2}%")?;
-    if report.metrics.outcomes.expected_rejection > 0 {
-        writeln!(
-            out,
-            "- Expected rejections: {}",
-            fmt_count(report.metrics.outcomes.expected_rejection)
-        )?;
-    }
     writeln!(
         out,
         "- Deadlocks: {}  Hangs: {}",

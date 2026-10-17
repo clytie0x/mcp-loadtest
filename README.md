@@ -115,8 +115,8 @@ Run it:
 mcp-loadtest run --config bench.toml
 ```
 
-Each run can produce terminal, Markdown, JSON, self-contained HTML, JUnit XML,
-and Prometheus text reports.
+Each run can produce terminal, Markdown, JSON, JUnit XML, and Prometheus text
+reports.
 Use the schema-stable `metrics.json` for CI comparisons:
 
 ```bash
@@ -149,14 +149,15 @@ thresholds, and baseline gating.
 
 - **Correctness under concurrency** — synchronized deadlock and race probes
   across independent sessions.
-- **Load profiles** — sustained, ramp, spike, soak, cold-start, and weighted
-  multi-step workloads.
+- **Load baselines** — sustained, cold-start, and weighted multi-step
+  workloads that share the detectors' session pool and supply the latency
+  baseline that separates a hang from a slow server.
 - **MCP-aware metrics** — p50/p95/p99/p999 latency, throughput, error classes,
   process sampling, coverage, and per-tool SLOs.
 - **Record and replay** — capture versioned JSONL traces, replay them against a
   fresh server, and fail on response divergence.
-- **Regression analysis** — compare two reports or run the same workload
-  against multiple servers; rolling history detects multi-run trends.
+- **Regression analysis** — compare two `metrics.json` reports and gate on
+  p99, error-rate, and deadlock regressions.
 - **CI and observability** — JSON, JUnit, and Prometheus outputs.
 - **Agent access** — `mcp-loadtest serve --mcp` exposes deadlock, sustained
   load, and comparison tools over MCP.
@@ -167,12 +168,8 @@ thresholds, and baseline gating.
 | --- | --- |
 | `cold_start` | Measure spawn, initialization, and first-call latency |
 | `sustained` | Track steady-state latency, throughput, and errors |
-| `ramp` | Find the concurrency breaking point |
-| `spike` | Exercise baseline, burst, and cooldown phases |
-| `soak` | Detect long-running resource drift |
 | `deadlock_probe` | Reproduce lazy-init and first-call deadlocks |
 | `race_check` | Detect non-deterministic responses |
-| `fuzzer` | Probe malformed protocol input handling |
 | `pattern` | Run weighted multi-step tool-call sequences |
 | `version_matrix` | Compare behavior across MCP protocol revisions |
 
@@ -181,11 +178,11 @@ and design rationale live in [DESIGN.md](DESIGN.md).
 
 ## Transports and security
 
-The client supports `stdio`, Streamable HTTP, SSE, and WebSocket transports.
+The client supports `stdio`, Streamable HTTP, and SSE transports.
 Remote targets require an explicit host allowlist. Credentials are read from
 environment variables through `headers_from_env`; literal remote credentials
 in TOML and URL userinfo are rejected. Credential-bearing remote connections
-require HTTPS or WSS.
+require HTTPS.
 
 For OAuth, `[server.auth]` supports authorization-code + PKCE and
 client-credentials flows. Discovery, refresh, and bounded scope step-up are

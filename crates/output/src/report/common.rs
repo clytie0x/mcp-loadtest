@@ -96,13 +96,6 @@ pub(crate) fn describe_failure(report: &Report) -> String {
             if errors == 1 { "" } else { "s" }
         ));
     }
-    if report.scenario_name == "fuzzer" && report.scenario_outcome.error_count > 0 {
-        let errors = report.scenario_outcome.error_count;
-        parts.push(format!(
-            "{errors} unexpected fuzzer error{}",
-            if errors == 1 { "" } else { "s" }
-        ));
-    }
     let incomplete_workers = report.scenario_outcome.incomplete_worker_count;
     if incomplete_workers > 0 && report.scenario_name != "race_check" {
         parts.push(format!(

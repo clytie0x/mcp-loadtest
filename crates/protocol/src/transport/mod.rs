@@ -13,7 +13,6 @@ pub(crate) mod resolve;
 pub mod spawn_options;
 pub mod sse;
 pub mod stdio;
-pub mod ws;
 
 pub use guard::HostGuard;
 
@@ -62,39 +61,13 @@ pub trait Transport: Send {
     /// Send a notification body (no `id`, no response expected).
     async fn notify(&mut self, body: &str) -> Result<(), TransportError>;
 
-    /// Send **raw, unframed bytes** on the wire, bypassing JSON-RPC
-    /// serialization entirely.
-    ///
-    /// This is the fuzzer's escape hatch for putting deliberately malformed
-    /// data on the connection — broken framing, invalid UTF-8, truncated or
-    /// oversized frames — that the typed [`Transport::request`] /
-    /// [`Transport::notify`] paths cannot express. The bytes are written
-    /// **verbatim**; the implementation decides only how to delimit them (the
-    /// stdio impl appends a single newline so a line-framed peer sees one
-    /// malformed frame).
-    ///
-    /// No response is read: after a raw send the wire may be desynced, so the
-    /// caller must treat the connection as poisoned and reconnect before the
-    /// next typed call.
-    ///
-    /// The default returns [`TransportError::Other`] — raw sends are only
-    /// meaningful for byte-stream transports. Non-stream transports
-    /// (HTTP / SSE / WebSocket) inherit this default, and callers (the fuzzer)
-    /// record those iterations as skipped rather than sent.
-    async fn raw_send(&mut self, bytes: &[u8]) -> Result<(), TransportError> {
-        let _ = bytes;
-        Err(TransportError::Other(
-            "raw_send unsupported on this transport".into(),
-        ))
-    }
-
     /// Read the next response frame **without** sending anything.
     ///
     /// Used to drain the late reply to a request whose caller stopped
     /// waiting (the auto-negotiation `server/discover` probe times out, then
     /// `initialize` goes out on the same stream). Only stream transports can
-    /// hold such a reply; request/response transports (HTTP / SSE /
-    /// WebSocket) inherit this default, which reports it as unsupported.
+    /// hold such a reply; request/response transports (HTTP / SSE)
+    /// inherit this default, which reports it as unsupported.
     async fn recv_response(&mut self) -> Result<String, TransportError> {
         Err(TransportError::Other(
             "recv_response unsupported on this transport".into(),
@@ -119,42 +92,4 @@ pub trait Transport: Send {
     /// own internal timeouts — the orchestrator wraps this in an outer
     /// timeout via `tokio::time::timeout` already.
     async fn shutdown(self: Box<Self>) -> Result<(), TransportError>;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Minimal transport implementing only the required methods, so it
-    /// inherits the default [`Transport::raw_send`] — the same position
-    /// HTTP / SSE / WebSocket are in.
-    struct NoRawTransport;
-
-    #[async_trait]
-    impl Transport for NoRawTransport {
-        async fn request(&mut self, _body: &str) -> Result<String, TransportError> {
-            Ok(String::new())
-        }
-        async fn notify(&mut self, _body: &str) -> Result<(), TransportError> {
-            Ok(())
-        }
-        async fn shutdown(self: Box<Self>) -> Result<(), TransportError> {
-            Ok(())
-        }
-    }
-
-    #[tokio::test]
-    async fn default_raw_send_reports_unsupported() {
-        let mut t = NoRawTransport;
-        let err = t
-            .raw_send(b"anything")
-            .await
-            .expect_err("default raw_send must error");
-        match err {
-            TransportError::Other(msg) => {
-                assert!(msg.contains("raw_send unsupported"), "unexpected: {msg}");
-            }
-            other => panic!("expected TransportError::Other, got {other:?}"),
-        }
-    }
 }

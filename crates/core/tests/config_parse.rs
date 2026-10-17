@@ -203,29 +203,6 @@ fn rejects_unknown_transport() {
 }
 
 #[test]
-fn rejects_ws_without_url() {
-    // `ws` is a URL transport like http/sse — a config without `server.url`
-    // can never connect and must be rejected at load, not at runtime.
-    let toml_in = r#"
-        [server]
-        transport = "ws"
-
-        [scenario]
-        type = "sustained"
-    "#;
-    let err = Config::from_toml_str(toml_in).expect_err("ws without url must be rejected");
-    match err {
-        ConfigError::Invalid(msg) => {
-            assert!(
-                msg.contains("server.url") && msg.contains("ws"),
-                "error message should mention server.url + the transport, got: {msg}"
-            );
-        }
-        other => panic!("expected ConfigError::Invalid, got {other:?}"),
-    }
-}
-
-#[test]
 fn syntactic_toml_error_is_toml_variant() {
     // Unbalanced brackets: triggers the parser, not the validator.
     let toml_in = r#"
@@ -337,7 +314,7 @@ fn rejects_nonportable_header_environment_name() {
 #[test]
 fn remote_url_policy_rejects_userinfo_without_echoing_credentials() {
     const SECRET: &str = "credential-sentinel-never-print";
-    for (transport, scheme) in [("http", "https"), ("sse", "https"), ("ws", "wss")] {
+    for (transport, scheme) in [("http", "https"), ("sse", "https")] {
         let toml_in = format!(
             r#"
                 [server]
@@ -368,7 +345,6 @@ fn remote_headers_require_tls_for_every_remote_transport() {
     for (transport, url) in [
         ("http", "http://mcp.example.test/rpc"),
         ("sse", "http://mcp.example.test/events"),
-        ("ws", "ws://mcp.example.test/socket"),
     ] {
         let toml_in = format!(
             r#"
@@ -388,14 +364,7 @@ fn remote_headers_require_tls_for_every_remote_transport() {
             matches!(err, ConfigError::Invalid(_)),
             "{transport}: unexpected error: {diagnostic}"
         );
-        assert!(
-            diagnostic.contains(if transport == "ws" {
-                "wss://"
-            } else {
-                "https://"
-            }),
-            "{transport}: {diagnostic}"
-        );
+        assert!(diagnostic.contains("https://"), "{transport}: {diagnostic}");
     }
 }
 
@@ -404,7 +373,7 @@ fn remote_url_policy_validates_scheme_host_and_fragment() {
     for (transport, url) in [
         ("http", "ftp://mcp.example.test/rpc"),
         ("sse", "https://"),
-        ("ws", "wss://mcp.example.test/socket#credential-fragment"),
+        ("http", "https://mcp.example.test/rpc#credential-fragment"),
     ] {
         let toml_in = format!(
             r#"
@@ -437,11 +406,6 @@ fn unauthenticated_plaintext_and_authenticated_tls_configs_remain_supported() {
             "sse",
             "http://mcp.example.test/events",
             "https://mcp.example.test/events",
-        ),
-        (
-            "ws",
-            "ws://mcp.example.test/socket",
-            "wss://mcp.example.test/socket",
         ),
     ] {
         let unauthenticated = format!(

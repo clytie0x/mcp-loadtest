@@ -42,9 +42,8 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-# CLI binary needs both `serve` (for `mcp-loadtest serve --mcp`) and `tui`
-# (for the live dashboard) subcommands.
-mcp-loadtest = { path = "../mcp-loadtest", version = "0.2.0", features = ["serve", "tui"] }
+# CLI binary needs `serve` for `mcp-loadtest serve --mcp`.
+mcp-loadtest = { path = "../mcp-loadtest", version = "0.2.0", features = ["serve"] }
 clap = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
@@ -52,8 +51,6 @@ humantime = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing-subscriber = { workspace = true }
-futures = "0.3"
-ulid = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

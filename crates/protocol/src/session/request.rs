@@ -1,5 +1,5 @@
 //! The request/response surface of [`Session`]: `list_tools`, `call_tool`,
-//! the strict-schema setters, `raw_send`, and the private `request`/`notify`
+//! the strict-schema setters, and the private `request`/`notify`
 //! JSON-RPC plumbing.
 //!
 //! Split out of `session/mod.rs` to keep that file within the size
@@ -134,7 +134,7 @@ impl Session {
     /// Call `tools/call` with the given tool name and arguments.
     ///
     /// Both `name` and `arguments` are borrowed — callers driving in a hot
-    /// loop (sustained / ramp / spike / soak / pattern scenarios) can pass
+    /// loop (sustained / pattern scenarios) can pass
     /// `&self.tool` and `&self.args` directly with zero per-iteration clone.
     pub async fn call_tool(
         &mut self,
@@ -189,18 +189,6 @@ impl Session {
             input_responses,
         };
         self.request("tools/call", &params).await
-    }
-
-    /// Send **raw, unframed bytes** straight to the transport, bypassing
-    /// JSON-RPC serialization — the fuzzer's escape hatch for
-    /// malformed-frame payloads ([`Transport::raw_send`]). No response is
-    /// read: after a raw send the wire may be desynced, so callers must
-    /// treat the session as poisoned and respawn before the next typed call.
-    ///
-    /// [`Transport::raw_send`]: crate::transport::Transport::raw_send
-    pub async fn raw_send(&mut self, bytes: &[u8]) -> Result<(), SessionError> {
-        self.transport.raw_send(bytes).await?;
-        Ok(())
     }
 
     pub(super) async fn request<P, R>(

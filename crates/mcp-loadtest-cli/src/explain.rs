@@ -91,8 +91,8 @@ What it does:
 
 Algorithm:
   1. Parse --config (TOML). Reject malformed / invalid configs up front.
-  2. Build the `[scenario].type` scenario (sustained / ramp / soak / spike /
-     pattern / race_check / fuzzer / deadlock_probe / cold_start).
+  2. Build the `[scenario].type` scenario (sustained / pattern /
+     race_check / deadlock_probe / cold_start / version_matrix).
   3. Spawn / connect the server (stdio child, or http / sse / ws — outbound
      network targets pass the SSRF host-allowlist first; see ADR 0012).
   4. Run `initialize` + `tools/list`, then execute the scenario.

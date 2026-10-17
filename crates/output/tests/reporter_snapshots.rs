@@ -20,7 +20,6 @@ use mcp_loadtest_core::outcome::ScenarioOutcome;
 use mcp_loadtest_core::report::{
     ProcessSample, ProcessStats, Report, Reporter, ServerInfo, ThresholdKind, ThresholdViolation,
 };
-use mcp_loadtest_output::report::html::HtmlReporter;
 use mcp_loadtest_output::report::json::JsonReporter;
 use mcp_loadtest_output::report::markdown::MarkdownReporter;
 use mcp_loadtest_output::report::terminal::TerminalReporter;
@@ -214,52 +213,6 @@ fn every_reporter_exposes_teardown_failures_and_gates_passed() {
         .expect("render teardown markdown report");
     assert!(markdown.contains("2 teardown failures"), "{markdown}");
     assert!(markdown.contains("- Teardown failures: 2"), "{markdown}");
-
-    let html = HtmlReporter
-        .render(&report)
-        .expect("render teardown HTML report");
-    assert!(html.contains("2 teardown failures"), "{html}");
-    assert!(
-        html.contains("<strong>Teardown failures:</strong> 2"),
-        "{html}"
-    );
-}
-
-#[test]
-fn reporters_expose_expected_fuzzer_rejections_as_successes() {
-    let mut report = pass_report();
-    report.scenario_name = "fuzzer".to_owned();
-    report.scenario_outcome.total_calls = 2;
-    report.scenario_outcome.successful_calls = 2;
-    report.metrics.throughput.total_requests = 2;
-    report.metrics.throughput.successful_requests = 2;
-    report.metrics.outcomes.success = 0;
-    report.metrics.outcomes.expected_rejection = 2;
-    let rendered = JsonReporter
-        .render(&report)
-        .expect("render expected-rejection report");
-    let value: serde_json::Value = serde_json::from_str(&rendered).expect("valid report json");
-    assert_eq!(value["expected_rejection_count"], 2);
-    assert_eq!(value["errors"]["total"], 0);
-    assert_eq!(value["passed"], true);
-
-    let terminal = TerminalReporter
-        .render(&report)
-        .expect("render expected-rejection terminal report");
-    assert!(terminal.contains("expected rejections: 2"), "{terminal}");
-
-    let markdown = MarkdownReporter
-        .render(&report)
-        .expect("render expected-rejection markdown report");
-    assert!(markdown.contains("- Expected rejections: 2"), "{markdown}");
-
-    let html = HtmlReporter
-        .render(&report)
-        .expect("render expected-rejection HTML report");
-    assert!(
-        html.contains("<strong>Expected rejections:</strong> 2"),
-        "{html}"
-    );
 }
 
 #[test]
@@ -388,36 +341,6 @@ fn empty_report() -> Report {
         threshold_violations: vec![],
         coverage: None,
     }
-}
-
-#[test]
-fn html_pass_snapshot() {
-    let html = HtmlReporter
-        .render(&pass_report())
-        .expect("render html pass");
-    insta::assert_snapshot!("html_pass", html);
-}
-
-#[test]
-fn html_fail_snapshot() {
-    let html = HtmlReporter
-        .render(&fail_report())
-        .expect("render html fail");
-    insta::assert_snapshot!("html_fail", html);
-}
-
-#[test]
-fn html_empty_snapshot() {
-    // Extreme-value coverage: zero calls / zero throughput must still render
-    // a full document (divide-by-zero guard) with the chart section omitted.
-    let html = HtmlReporter
-        .render(&empty_report())
-        .expect("render html empty");
-    assert!(
-        !html.contains("Latency distribution"),
-        "chart should be omitted for empty metrics"
-    );
-    insta::assert_snapshot!("html_empty", html);
 }
 
 #[test]

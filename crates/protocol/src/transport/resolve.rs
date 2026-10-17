@@ -19,7 +19,6 @@ use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
 
-use tokio::net::TcpStream;
 use url::Url;
 
 use super::TransportError;
@@ -130,31 +129,6 @@ pub(crate) fn pinned_client(
         .map_err(|e| TransportError::Http(format!("client build: {e}")))
 }
 
-/// Dial the first reachable vetted address, in resolver order. The caller
-/// (ws transport) completes the WebSocket / TLS handshake with the original
-/// *hostname* URL, so TLS SNI and the `Host` header stay correct while the
-/// socket goes only where [`resolve_and_check`] approved.
-pub(crate) async fn dial_pinned(
-    host: &str,
-    addrs: &[SocketAddr],
-) -> Result<TcpStream, TransportError> {
-    let mut last_err: Option<io::Error> = None;
-    for addr in addrs {
-        match TcpStream::connect(addr).await {
-            Ok(stream) => return Ok(stream),
-            Err(e) => last_err = Some(e),
-        }
-    }
-    Err(TransportError::Other(format!(
-        "connect to `{host}` failed on all {n} pinned address(es): {err} (resolver pinning, \
-         ADR 0016)",
-        n = addrs.len(),
-        err = last_err
-            .map(|e| e.to_string())
-            .unwrap_or_else(|| "no addresses to dial".into()),
-    )))
-}
-
 #[cfg(test)]
 mod tests {
     use std::future::{Ready, ready};
@@ -239,16 +213,6 @@ mod tests {
         )
         .await
         .expect("public resolution must pass");
-        assert_eq!(addrs, vec![SocketAddr::new(ip, 443)]);
-    }
-
-    #[tokio::test]
-    async fn wss_scheme_pins_port_443() {
-        let ip = IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34));
-        let addrs =
-            resolve_and_check_with(&url("wss://api.example.com/"), &guard(&[]), fixed(vec![ip]))
-                .await
-                .expect("public wss resolution must pass");
         assert_eq!(addrs, vec![SocketAddr::new(ip, 443)]);
     }
 
@@ -370,43 +334,5 @@ mod tests {
             panic!("expected Other");
         };
         assert!(m.contains("no addresses"), "got: {m}");
-    }
-
-    #[tokio::test]
-    async fn dial_pinned_falls_back_across_addrs() {
-        // Bind a real listener, plus a port we just freed (very likely
-        // refused) in front of it — dial must fall through to the live one.
-        let live = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind");
-        let live_addr = live.local_addr().expect("addr");
-        let dead_addr = {
-            let l = tokio::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .expect("bind");
-            l.local_addr().expect("addr")
-            // listener dropped here — port closed
-        };
-        let stream = dial_pinned("localhost", &[dead_addr, live_addr])
-            .await
-            .expect("must fall back to the live address");
-        assert_eq!(stream.peer_addr().expect("peer"), live_addr);
-    }
-
-    #[tokio::test]
-    async fn dial_pinned_all_unreachable_reports_adr_0016() {
-        let dead_addr = {
-            let l = tokio::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .expect("bind");
-            l.local_addr().expect("addr")
-        };
-        let err = dial_pinned("example.com", &[dead_addr])
-            .await
-            .expect_err("dead address must fail");
-        let TransportError::Other(m) = err else {
-            panic!("expected Other");
-        };
-        assert!(m.contains("ADR 0016"), "got: {m}");
     }
 }

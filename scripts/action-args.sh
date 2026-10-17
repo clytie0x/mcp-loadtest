@@ -103,11 +103,11 @@ PY
 # Give every Action invocation an empty report root that it alone owns.
 # Results are returned in globals so paths containing spaces never pass through
 # shell word splitting:
-#   MCP_LOADTEST_REPORT_MODE = single | multiple | none
+#   MCP_LOADTEST_REPORT_MODE = single | none
 #   MCP_LOADTEST_REPORT_ROOT = unique root, or empty for `none`
 #
 # Callers cannot choose either output override. The Action appends its own
-# `--output-dir` for deadlock-probe/cross or hidden `--action-output-dir` for
+# `--output-dir` for deadlock-probe or hidden `--action-output-dir` for
 # run only after this function accepts the caller's literal argv.
 mcp_loadtest_prepare_report_target() {
   if [ "$#" -lt 2 ]; then
@@ -127,9 +127,6 @@ mcp_loadtest_prepare_report_target() {
   case "$command" in
     doctor)
       MCP_LOADTEST_REPORT_MODE="none"
-      ;;
-    cross)
-      MCP_LOADTEST_REPORT_MODE="multiple"
       ;;
     deadlock-probe|run)
       MCP_LOADTEST_REPORT_MODE="single"
@@ -153,7 +150,6 @@ mcp_loadtest_prepare_report_target() {
     esac
     case "${command}:${arg}" in
       deadlock-probe:--output-dir|deadlock-probe:--output-dir=*|\
-      cross:--output-dir|cross:--output-dir=*|\
       run:--output-dir|run:--output-dir=*)
         echo "mcp-loadtest action: --output-dir is reserved for the Action" >&2
         return 2

@@ -167,20 +167,6 @@ impl Transport for StdioTransport {
         Ok(())
     }
 
-    async fn raw_send(&mut self, bytes: &[u8]) -> Result<(), TransportError> {
-        // Write the caller's bytes *verbatim* — invalid UTF-8, truncated JSON
-        // and other framing violations are the whole point (this is the
-        // fuzzer's raw escape hatch), so we do no validation or escaping. A
-        // single trailing newline delimits them as one (malformed) frame for a
-        // line-framed peer. Unlike `request` we read nothing back: the wire may
-        // now be desynced, so the caller treats the session as poisoned.
-        let stdin = self.stdin_mut()?;
-        stdin.write_all(bytes).await?;
-        stdin.write_all(b"\n").await?;
-        stdin.flush().await?;
-        Ok(())
-    }
-
     fn pid(&self) -> Option<u32> {
         self.child.as_ref().and_then(Child::id)
     }
@@ -248,48 +234,5 @@ mod notification_tests {
         // swallowed here — the session surfaces them as malformed.
         assert!(!is_notification_frame("not json at all"));
         assert!(!is_notification_frame(r#"{"jsonrpc":"2.0","result":{}}"#));
-    }
-}
-
-// The only test in here is the unix-gated loopback, so gate the whole module
-// — otherwise its `use` lines are unused imports on Windows under
-// `-D warnings`.
-#[cfg(all(test, unix))]
-mod tests {
-    use std::ffi::OsStr;
-
-    use super::*;
-    use tokio::io::AsyncReadExt;
-
-    // Loopback: `cat` copies stdin → stdout byte-for-byte (it uses raw
-    // read/write syscalls on the pipe, no libc stdio buffering), so we can
-    // read back exactly what `raw_send` wrote and assert the bytes are
-    // verbatim plus a single trailing newline. Unix-only — `cat` isn't
-    // guaranteed on Windows and the newline-framing contract is
-    // platform-independent, so one platform is enough coverage.
-    #[tokio::test]
-    async fn raw_send_writes_verbatim_bytes_then_single_newline() {
-        let no_args: [&OsStr; 0] = [];
-        let mut t = StdioTransport::spawn("cat", no_args)
-            .await
-            .expect("spawn cat");
-
-        // Deliberately neither valid UTF-8 nor valid JSON: raw_send must not
-        // touch, escape, or reframe it.
-        let payload: &[u8] = b"{\"broken\": \x00\xff not-json";
-        t.raw_send(payload).await.expect("raw_send");
-
-        let mut buf = vec![0u8; payload.len() + 1];
-        tokio::time::timeout(Duration::from_secs(5), t.stdout.read_exact(&mut buf))
-            .await
-            .expect("cat echo timed out")
-            .expect("read echoed bytes");
-
-        let mut expected = payload.to_vec();
-        expected.push(b'\n');
-        assert_eq!(
-            buf, expected,
-            "raw_send must write bytes verbatim + exactly one newline"
-        );
     }
 }

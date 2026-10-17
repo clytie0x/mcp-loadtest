@@ -122,7 +122,7 @@ fn failure_summary(report: &Report) -> String {
 
     if matches!(
         report.scenario_name.as_str(),
-        "race_check" | "deadlock_probe" | "fuzzer"
+        "race_check" | "deadlock_probe"
     ) {
         push_nonzero(
             &mut reasons,

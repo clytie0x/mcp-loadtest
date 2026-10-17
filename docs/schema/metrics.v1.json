@@ -80,7 +80,7 @@
         "total_requests": { "type": "integer" },
         "successful_requests": {
           "type": "integer",
-          "description": "Ordinary successes plus expected protocol-fuzz rejections."
+          "description": "Calls that returned a successful tool result."
         },
         "requests_per_sec": {
           "type": "number",
@@ -148,10 +148,6 @@
     "teardown_failure_count": {
       "type": "integer",
       "description": "Session or transport teardowns that errored or exceeded their lifecycle deadline. Omitted when zero; any non-zero value makes the run fail."
-    },
-    "expected_rejection_count": {
-      "type": "integer",
-      "description": "Malformed fuzz probes rejected or survived as expected. These count as successful requests and are omitted when zero."
     },
     "trace_path": {
       "type": "string",

@@ -69,10 +69,10 @@ that is the regression gate. The action uploads nothing itself; keep the
 | Input               | Default          | Description                                                                                                     |
 | ------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------- |
 | `server`            | — (required)     | Server command string passed to `--server`, e.g. `"python -m my_mcp"`. Ignored by `command: run` (TOML has it). |
-| `command`           | `deadlock-probe` | One of `deadlock-probe`, `run`, `cross`, `doctor`. For `run`, pass `--config ci.toml` via `args`.               |
+| `command`           | `deadlock-probe` | One of `deadlock-probe`, `run`, `doctor`. For `run`, pass `--config ci.toml` via `args`.                        |
 | `args`              | `[]`             | Extra CLI arguments as a JSON array of strings. Each element is one literal argument; shell syntax is rejected. |
 | `version`           | `v0.2.0`         | Stable release tag of the binary to install. Set `latest` explicitly only when reproducibility is not required. |
-| `baseline`          | `""`             | Baseline `metrics.json` for a single-report `run` or `deadlock-probe`; rejected for `cross` and `doctor`.       |
+| `baseline`          | `""`             | Baseline `metrics.json` for a `run` or `deadlock-probe` report; rejected for `doctor`.                          |
 | `working-directory` | `.`              | Directory to run in.                                                                                            |
 
 The Action reference and installed binary are both pinned in the example.
@@ -83,7 +83,7 @@ reproducible; it also cannot resolve before the first Release exists.
 
 | Output       | Description                                                                                                         |
 | ------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `report-dir` | Exact new run directory for `run`/`deadlock-probe`, the current `cross` report root, or empty for `doctor`.        |
+| `report-dir` | Exact new run directory for `run`/`deadlock-probe`, or empty for `doctor`.                                          |
 | `passed`     | `"true"` only when command, report attribution, and optional comparison all pass; otherwise `"false"`.           |
 
 A short results table is appended to the job summary (`$GITHUB_STEP_SUMMARY`)
@@ -101,7 +101,7 @@ when you need fine-grained control over install, caching, or thresholds.
 - If p99 latency regresses past your budget, CI fails.
 - If a lazy-init deadlock sneaks in, CI fails in under 10 seconds.
 - The machine-readable `metrics.json` is uploaded as a build artifact for
-  trend analysis or `mcp-loadtest compare` against a stored baseline.
+  `mcp-loadtest compare` against a stored baseline.
 
 ## TOML config (`ci.toml`)
 
@@ -266,7 +266,7 @@ summary.
 
 ## Remote authentication scope
 
-For `http`, `sse`, or `ws`, keep credentials in the CI secret store and map a
+For `http` or `sse`, keep credentials in the CI secret store and map a
 header name to the environment-variable name in TOML:
 
 ```toml
@@ -286,8 +286,8 @@ headers_from_env = { Authorization = "MCP_AUTHORIZATION" }
 
 The environment variable must contain the complete header value.
 `headers_from_env` is the only explicit remote-credential facility. If it is
-nonempty, HTTP/SSE require `https://` and WebSocket requires `wss://`; the
-client never falls back to plaintext. URL userinfo is forbidden. Query
+nonempty, HTTP/SSE require `https://`; the client never falls back to
+plaintext. URL userinfo is forbidden. Query
 strings are transmitted unchanged to the target but replaced wholesale with
 `?redacted` in reports and traces, so never put credentials in a query.
 Literal headers in TOML, OAuth login/refresh/discovery, and interactive
@@ -306,8 +306,8 @@ credentials.
 - **Set `hang_timeout` shorter than the job timeout.** A wedged server should
   show up as a clear `FAIL`, not a CI cancellation.
 - **Keep one `ci.toml` per profile.** A "smoke" profile (10s, 5 concurrent)
-  on PR + a "soak" profile (10m, 5 concurrent) on a nightly schedule is the
-  pattern that scales.
+  on PR + a longer `sustained` profile (10m, 5 concurrent) on a nightly
+  schedule is the pattern that scales.
 - **The `metrics.json` schema is stable** — see
   [`docs/schema/metrics.v1.json`](../schema/metrics.v1.json). Safe to script
   custom assertions on top of it without breakage across patch releases.

@@ -222,7 +222,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_history_output_block() {
+    fn parses_output_formats() {
         let toml_in = r#"
             [server]
             command = "python"
@@ -231,18 +231,9 @@ mod tests {
             tool = "echo"
             [output]
             formats = ["json", "junit", "prometheus"]
-            [output.history]
-            series = "main-sustained"
-            directory = "./history"
-            window = 7
-            min_samples = 3
-            require_history = true
         "#;
         let cfg = Config::from_toml_str(toml_in).expect("output blocks must parse");
-        let history = cfg.output.history.expect("history block");
-        assert_eq!(history.series, "main-sustained");
-        assert_eq!(history.window, 7);
-        assert!(history.require_history);
+        assert_eq!(cfg.output.formats, ["json", "junit", "prometheus"]);
     }
 
     #[test]
@@ -262,22 +253,17 @@ mod tests {
             "got {err}"
         );
 
-        let impossible_history = r#"
+        let removed_history = r#"
             [server]
             command = "python"
             [scenario]
             type = "sustained"
             tool = "echo"
             [output.history]
-            series = "../escape"
-            window = 2
-            min_samples = 3
+            series = "main-sustained"
         "#;
-        let err = Config::from_toml_str(impossible_history).unwrap_err();
-        assert!(
-            matches!(err, ConfigError::Invalid(ref m) if m.contains("output.history.series")),
-            "got {err}"
-        );
+        let err = Config::from_toml_str(removed_history).unwrap_err();
+        assert!(err.to_string().contains("history"), "got {err}");
     }
 
     #[test]
@@ -286,7 +272,7 @@ mod tests {
             [server]
             command = "python"
             [scenario]
-            type = "soak"
+            type = "sustained"
             [thresholds]
             rss_leak_mb_per_sec = 0.5
         "#;
@@ -300,7 +286,7 @@ mod tests {
             [server]
             command = "python"
             [scenario]
-            type = "soak"
+            type = "sustained"
             [thresholds]
             memory_growth_mb = 50.0
         "#;
@@ -314,7 +300,7 @@ mod tests {
             [server]
             command = "python"
             [scenario]
-            type = "soak"
+            type = "sustained"
             [thresholds]
             rss_leak_mb_per_sec = -0.5
         "#;
@@ -340,7 +326,7 @@ mod tests {
                     [server]
                     command = "python"
                     [scenario]
-                    type = "soak"
+                    type = "sustained"
                     [thresholds]
                     {field} = {value}
                 "#
@@ -355,42 +341,6 @@ mod tests {
                 "{field}={value}: expected a finite-value validation error, got {err}"
             );
         }
-    }
-
-    #[test]
-    fn accepts_scenario_kind_ramp() {
-        let toml_in = r#"
-            [server]
-            command = "python"
-            [scenario]
-            type = "ramp"
-        "#;
-        let cfg = Config::from_toml_str(toml_in).expect("ramp must parse");
-        assert_eq!(cfg.scenario.kind, "ramp");
-    }
-
-    #[test]
-    fn accepts_scenario_kind_soak() {
-        let toml_in = r#"
-            [server]
-            command = "python"
-            [scenario]
-            type = "soak"
-        "#;
-        let cfg = Config::from_toml_str(toml_in).expect("soak must parse");
-        assert_eq!(cfg.scenario.kind, "soak");
-    }
-
-    #[test]
-    fn accepts_scenario_kind_fuzzer() {
-        let toml_in = r#"
-            [server]
-            command = "python"
-            [scenario]
-            type = "fuzzer"
-        "#;
-        let cfg = Config::from_toml_str(toml_in).expect("fuzzer must parse");
-        assert_eq!(cfg.scenario.kind, "fuzzer");
     }
 
     #[test]
@@ -469,17 +419,5 @@ mod tests {
             matches!(err, ConfigError::Invalid(ref m) if m.contains("protocol_version")),
             "expected Invalid mentioning protocol_version, got: {err}"
         );
-    }
-
-    #[test]
-    fn parses_spike_kind() {
-        let toml_in = r#"
-            [server]
-            command = "python"
-            [scenario]
-            type = "spike"
-        "#;
-        let cfg = Config::from_toml_str(toml_in).expect("spike must parse");
-        assert_eq!(cfg.scenario.kind, "spike");
     }
 }

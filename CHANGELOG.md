@@ -53,6 +53,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JSON, JUnit, and Prometheus reports remain.
 - Both blocks are also gone from the bundled config schema. Configs that
   still contain them are not rejected; the blocks are ignored.
+- Features outside the concurrency-bug scope, per
+  [ADR 0025](docs/adr/0025-trim-to-detector-surface.md): the `ramp` (with
+  breaking-point analysis), `spike`, `soak`, and `fuzzer` scenarios; the
+  `ws` WebSocket transport; the `cross` subcommand and A-F grading; the
+  `html` report format; the unused Ratatui dashboard; and the
+  `[output.history]` rolling baseline. Configs that use any of them now
+  fail validation, and the GitHub Action rejects `command: cross`. Use
+  `compare` against a stored `metrics.json` for regression gating.
+- `metrics.json` no longer emits `expected_rejection_count`, and the
+  Prometheus output drops the `expected_rejection` outcome label. Only the
+  fuzzer produced them.
+- `Transport::raw_send` and `Session::raw_send`, which only the fuzzer used.
+- Unused dependencies: `ratatui`, `crossterm`, `tokio-tungstenite`,
+  `tokio-stream`, `indicatif`, `futures`, and `ulid` in the CLI.
 
 ## [0.2.0] — Release candidate contents
 

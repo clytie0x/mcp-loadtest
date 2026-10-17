@@ -171,33 +171,6 @@ pub(crate) enum Cmd {
         action_redact_server_identity: bool,
     },
 
-    /// Run the same workload against N servers and emit a side-by-side comparison.
-    Cross {
-        /// MCP server commands to compare. Repeat the flag once per server,
-        /// e.g. `--server "python -m a" --server "python -m b"`.
-        #[arg(long = "server", num_args = 1.., action = clap::ArgAction::Append, required = true)]
-        servers: Vec<String>,
-        /// Tool name to call on every iteration.
-        #[arg(long, default_value = "echo")]
-        tool: String,
-        /// Tool arguments as a JSON object.
-        #[arg(long, default_value = "{}")]
-        args: String,
-        /// Per-server run duration (humantime: `30s`, `1m`, ...).
-        #[arg(long, default_value = "10s")]
-        duration: String,
-        /// Which scenario to drive: `sustained` (default) or `deadlock_probe`.
-        #[arg(long, default_value = "sustained")]
-        scenario: String,
-        /// Where to write per-run dirs (one per server). Comparison itself
-        /// is printed to stdout.
-        #[arg(long, default_value = "./runs")]
-        output_dir: PathBuf,
-        /// Suppress server identities from Action-generated output.
-        #[arg(long, hide = true)]
-        action_redact_server_identity: bool,
-    },
-
     /// Expose mcp-loadtest itself AS an MCP server over stdio.
     ///
     /// Lets AI agents (Claude Code, Cursor, ...) drive load tests by calling

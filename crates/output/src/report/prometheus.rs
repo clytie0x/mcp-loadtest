@@ -67,7 +67,6 @@ impl Reporter for PrometheusReporter {
         let outcomes = &report.metrics.outcomes;
         for (label, count) in [
             ("success", outcomes.success),
-            ("expected_rejection", outcomes.expected_rejection),
             ("hang", outcomes.hang),
             ("deadlock", outcomes.deadlock),
             ("timeout", outcomes.timeout),

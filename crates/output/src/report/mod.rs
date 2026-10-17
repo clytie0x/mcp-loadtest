@@ -1,9 +1,9 @@
-//! Report renderers (Markdown / JSON / HTML / terminal). The `Report` data
+//! Report renderers (Markdown / JSON / JUnit / Prometheus /
+//! terminal). The `Report` data
 //! model, the `Reporter` trait, and `format_iso8601_utc` live in
 //! `mcp-loadtest-core` and are re-exported here for the renderers' internal
 //! convenience.
 
-pub mod html;
 pub mod json;
 pub mod junit;
 pub mod markdown;

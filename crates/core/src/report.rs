@@ -62,7 +62,7 @@ impl Report {
     ///   not actually exercised;
     /// - any session/transport teardown failed or exceeded its lifecycle
     ///   deadline;
-    /// - a race check, deadlock probe, or fuzzer produced any unexpected
+    /// - a race check or deadlock probe produced any unexpected
     ///   error or breached the configured hang threshold (a diagnostic cohort
     ///   cannot be called healthy when one member errored or responded late);
     ///   or
@@ -89,10 +89,8 @@ impl Report {
         .into_iter()
         .any(|count| count > 0);
         let diagnostic_complete =
-            !matches!(
-                self.scenario_name.as_str(),
-                "race_check" | "deadlock_probe" | "fuzzer"
-            ) || (outcome.error_count == 0 && outcome.hang_count == 0 && recorded.hang == 0);
+            !matches!(self.scenario_name.as_str(), "race_check" | "deadlock_probe")
+                || (outcome.error_count == 0 && outcome.hang_count == 0 && recorded.hang == 0);
 
         self.threshold_violations.is_empty()
             && outcome.total_calls > 0
@@ -124,7 +122,7 @@ pub struct ServerInfo {
 ///
 /// **M3 Agent G** populated `peak_rss_mb` / `final_rss_mb` / `avg_cpu_pct`
 /// via `sysinfo`. **M6 Agent T** added the fd / thread peak + final pair
-/// to drive the soak-leak heuristic.
+/// to drive the leak heuristic.
 ///
 /// The fd fields are best-effort: on platforms where sysinfo can't see
 /// open file descriptors (Windows, sometimes macOS) they stay at `0`.
@@ -420,7 +418,7 @@ mod tests {
 
     #[test]
     fn passed_rejects_mixed_success_and_slow_diagnostic_cohorts() {
-        for scenario_name in ["race_check", "deadlock_probe", "fuzzer"] {
+        for scenario_name in ["race_check", "deadlock_probe"] {
             let mut r = skeleton_report();
             r.scenario_name = scenario_name.into();
             r.scenario_outcome.total_calls = 2;
@@ -448,24 +446,6 @@ mod tests {
             r.passed(),
             "non-diagnostic load scenarios keep partial slow calls under configured threshold policy"
         );
-    }
-
-    #[test]
-    fn passed_accepts_expected_fuzzer_rejections_but_rejects_unexpected_errors() {
-        let mut r = skeleton_report();
-        r.scenario_name = "fuzzer".into();
-        r.scenario_outcome.total_calls = 2;
-        r.scenario_outcome.successful_calls = 2;
-        r.metrics.outcomes.expected_rejection = 2;
-        assert!(
-            r.passed(),
-            "expected server rejections are healthy fuzz probes"
-        );
-
-        r.scenario_outcome.total_calls = 3;
-        r.scenario_outcome.error_count = 1;
-        r.metrics.outcomes.server_error = 1;
-        assert!(!r.passed(), "unexpected fuzzer errors must fail closed");
     }
 
     #[test]

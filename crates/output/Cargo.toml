@@ -1,6 +1,6 @@
 [package]
 name = "mcp-loadtest-output"
-description = "Report renderers, grading, regression policy, and the live TUI for mcp-loadtest"
+description = "Report renderers and regression policy for mcp-loadtest"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,27 +11,12 @@ authors.workspace = true
 [lints]
 workspace = true
 
-[features]
-# Live-polling Ratatui dashboard. Only the CLI binary opts in.
-tui = ["dep:ratatui", "dep:crossterm"]
-
 [dependencies]
 mcp-loadtest-core = { path = "../core", version = "0.2.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 console = { workspace = true }
-tracing = { workspace = true }
-tokio = { workspace = true }
-tokio-util = { workspace = true }
-ratatui = { workspace = true, optional = true }
-crossterm = { workspace = true, optional = true }
 
 [dev-dependencies]
 insta = "1"
 serde_json = { workspace = true }
-ratatui = { workspace = true }
-
-[[test]]
-name = "tui_smoke"
-required-features = ["tui"]

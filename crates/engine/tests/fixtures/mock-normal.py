@@ -32,10 +32,9 @@ def main():
             msg = read_frame()
         except json.JSONDecodeError:
             # A normal JSON-RPC server must reject malformed JSON instead of
-            # crashing. Keeping the process alive also makes the raw-fuzzer
-            # reaction observable as an explicit -32700 response rather than
-            # an OS-scheduling race between child exit/EOF and its probe
-            # deadline.
+            # crashing. Keeping the process alive makes the reaction
+            # observable as an explicit -32700 response rather than an
+            # OS-scheduling race between child exit/EOF and a client deadline.
             respond_error(None, -32700, "parse error")
             continue
         if msg is None:
@@ -45,8 +44,8 @@ def main():
         is_notification = msg_id is None
 
         # JSON-RPC notifications never receive a response. In particular, a
-        # raw fuzzer frame containing `tools/list` but no id must not produce
-        # a success envelope with `"id": null`.
+        # frame containing `tools/list` but no id must not produce a success
+        # envelope with `"id": null`.
         if is_notification:
             continue
         if method == "initialize":

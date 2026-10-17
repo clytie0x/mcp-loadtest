@@ -1,7 +1,7 @@
 # Security policy
 
 `mcp-loadtest` is a load-testing tool that spawns user-supplied processes,
-parses JSON-RPC over stdio/HTTP/SSE/WebSocket, and exposes a self-hosted MCP
+parses JSON-RPC over stdio/HTTP/SSE, and exposes a self-hosted MCP
 server (`serve --mcp`). Security issues in this tool can affect operators
 running it—not the end users of MCP servers being tested. Vulnerabilities in
 the MCP servers under test are the responsibility of those servers' authors.
@@ -18,7 +18,7 @@ In scope:
 
 - Child-process spawning and argv handling for the stdio transport (`Session::spawn`, command/args parsing).
 - JSON-RPC framing and parsing (line reader, message dispatch).
-- HTTP, SSE, and WebSocket transports—URL handling, remote-header secrecy,
+- HTTP and SSE transports—URL handling, remote-header secrecy,
   redirect policy, and SSRF surface.
 - `serve --mcp` mode — path traversal, unbounded stdin reads, OOM via large payloads, request validation.
 - Supply chain — Cargo dependencies (`cargo audit` / `cargo deny` findings, advisory follow-up).
@@ -41,12 +41,12 @@ Implemented in commit `bae92c2`:
 Implemented since:
 
 - **Bounded remote-response allocation** — Streamable HTTP bodies, legacy SSE
-  event data, and WebSocket messages are capped at 16 MiB during incremental
-  network consumption or protocol reassembly, before an oversized complete
-  payload can be materialized. SSE and WebSocket reader queues plus
-  id-mismatch buffers share a 32 MiB retained-byte budget.
-- **SSRF host-allowlist + always-on private-IP-literal block** (ADR 0012) — opt-in exact-match `[server].allowed_hosts`, plus an unconditional block of private/loopback/link-local/ULA/reserved IP-literal URLs on the HTTP/SSE/WS transports. The SSE server-provided `endpoint` URL is re-checked.
-- **DNS-rebinding defense via resolver pinning** (ADR 0016) — hostnames are resolved once at connect time, every resolved address is vetted against the same private-IP blocklist, and the vetted addresses are pinned for the actual connection (reqwest `resolve_to_addrs` for HTTP/SSE; a self-dialed, vetted TCP socket for WS). This closes the hostname→private-IP gap (e.g. `localtest.me` → `127.0.0.1`, or DNS that flips between check and connect) that ADR 0012 documented as a residual risk.
+  event data are capped at 16 MiB during incremental network consumption or
+  protocol reassembly, before an oversized complete payload can be
+  materialized. SSE reader queues plus id-mismatch buffers share a 32 MiB
+  retained-byte budget.
+- **SSRF host-allowlist + always-on private-IP-literal block** (ADR 0012) — opt-in exact-match `[server].allowed_hosts`, plus an unconditional block of private/loopback/link-local/ULA/reserved IP-literal URLs on the HTTP/SSE transports. The SSE server-provided `endpoint` URL is re-checked.
+- **DNS-rebinding defense via resolver pinning** (ADR 0016) — hostnames are resolved once at connect time, every resolved address is vetted against the same private-IP blocklist, and the vetted addresses are pinned for the actual connection (reqwest `resolve_to_addrs` for HTTP/SSE). This closes the hostname→private-IP gap (e.g. `localtest.me` → `127.0.0.1`, or DNS that flips between check and connect) that ADR 0012 documented as a residual risk.
 - **Secret-safe static remote headers**—`headers_from_env` is the only
   explicit remote-credential facility. Nonempty remote headers require
   HTTPS/WSS, URL userinfo and fragments are rejected, HTTP redirects remain

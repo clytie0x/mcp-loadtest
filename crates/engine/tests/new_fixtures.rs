@@ -2,7 +2,7 @@
 //! `mock-error.py`, `mock-malformed.py`, `mock-leak.py`, `mock-slow-init.py`.
 //!
 //! Each test drives the real fixture through the public API the same way the
-//! existing `tests/scenarios_basic.rs` / `tests/soak.rs` suites do (spawn a
+//! existing `tests/scenarios_basic.rs` suite does (spawn a
 //! `Session`, build a `RunContext`, run a `Scenario`, assert on the recorded
 //! metrics) — proving the fixture exercises the intended client code path:
 //!
@@ -20,8 +20,8 @@ mod helpers;
 use std::time::{Duration, Instant};
 
 use mcp_loadtest_core::metrics::Recorder;
+use mcp_loadtest_engine::leak_detect::detect_leak;
 use mcp_loadtest_engine::process::ProcessSampler;
-use mcp_loadtest_engine::scenario::soak::{Soak, detect_leak};
 use mcp_loadtest_engine::scenario::sustained::Sustained;
 use mcp_loadtest_engine::scenario::{RunContext, Scenario};
 use mcp_loadtest_protocol::Session;
@@ -165,15 +165,15 @@ async fn mock_malformed_classifies_as_malformed() {
 
 /// `mock-leak.py` appends 10 KB to a module-global list on every `tools/call`
 /// and never frees it, so the server's RSS climbs monotonically under load.
-/// We sample the child process via [`ProcessSampler`] while a short soak runs,
+/// We sample the child process via [`ProcessSampler`] while a short sustained run drives it,
 /// then assert the linear-regression slope from [`detect_leak`] is strictly
 /// positive (tolerant: we check *direction*, not magnitude).
 ///
 /// `#[ignore]` rationale: process RSS sampling is inherently noisy on shared
 /// CI runners (allocator arena reuse, GC-less but page-cache effects, sampler
-/// scheduling jitter) and the soak window here is deliberately short to keep
+/// scheduling jitter) and the run window here is deliberately short to keep
 /// the suite fast. The leak detector itself has exhaustive synthetic-shape
-/// unit coverage in `scenario/soak/leak_detect.rs` + `tests/soak.rs`; this
+/// unit coverage in `src/leak_detect.rs`; this
 /// test is the end-to-end smoke and is gated to avoid flaking the default
 /// `cargo test` gate. Run explicitly with `--ignored` to exercise it.
 //
@@ -192,23 +192,21 @@ async fn mock_leak_rss_slope_positive() {
     let pid = session.pid().expect("stdio child must expose a pid");
 
     let cancel = CancellationToken::new();
-    // Sample fast so a short soak still yields several points to regress.
+    // Sample fast so a short run still yields several points to regress.
     let sampler = ProcessSampler::spawn(pid, Duration::from_millis(250), cancel.clone());
 
-    let scenario = Soak {
+    let scenario = Sustained {
         concurrent: 1,
         duration: Duration::from_secs(6),
         tool: "echo".to_string(),
         args: json!({ "x": 1 }),
-        sample_interval: Duration::from_millis(500),
-        latency_drift_ms_per_sec: 5.0,
     };
 
     let ctx = make_ctx();
     let outcome = scenario.drive(&mut session, &ctx).await;
     assert!(
         outcome.total_calls > 0,
-        "soak should drive calls against mock-leak; got {outcome:?}"
+        "sustained should drive calls against mock-leak; got {outcome:?}"
     );
 
     let stats = sampler.finish().await;

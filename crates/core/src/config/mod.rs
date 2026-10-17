@@ -69,7 +69,7 @@ pub struct ValidationConfig {
 /// Transport-specific fields:
 /// - `transport = "stdio"` (default) → `command` required; `args`, `env`,
 ///   `working_dir` apply.
-/// - `transport = "http"`, `"sse"`, or `"ws"` → `url` required;
+/// - `transport = "http"` or `"sse"` → `url` required;
 ///   `command`/`args`/`env` ignored.
 #[derive(Debug, Clone, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -501,7 +501,7 @@ pub struct ThresholdsConfig {
     /// Max RSS growth *rate* (MB per second) tolerated during the run.
     ///
     /// Opt-in: when set, the orchestrator fits a least-squares line
-    /// (`detect_leak`, in the `mcp-loadtest` crate's soak scenario) to the
+    /// (`detect_leak`, in `mcp-loadtest-engine`) to the
     /// sampled RSS timeseries (`ProcessStats::samples`) and flags a
     /// violation when the slope exceeds this budget. Complements
     /// `memory_growth_mb`: the slope catches a slow, steady leak that
@@ -528,78 +528,16 @@ pub struct ThresholdsConfig {
 
 /// Output block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct OutputConfig {
     /// Where per-run dirs are created.
     #[serde(default = "default_report_dir")]
     pub report_dir: PathBuf,
-    /// Output formats to emit (`"markdown"`, `"json"`, `"terminal"`).
+    /// Output formats to emit (`"terminal"`, `"markdown"`, `"json"`,
+    /// `"junit"`, `"prometheus"`).
     #[serde(default = "default_formats")]
     pub formats: Vec<String>,
-    /// Optional rolling baseline history and regression gate.
-    #[serde(default)]
-    pub history: Option<HistoryOutputConfig>,
-}
-
-/// Rolling history baseline configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[non_exhaustive]
-pub struct HistoryOutputConfig {
-    /// Portable series identifier (for example `main-sustained`).
-    pub series: String,
-    /// Root directory containing one subdirectory per series.
-    #[serde(default = "default_history_directory")]
-    pub directory: PathBuf,
-    /// Latest eligible passed samples used for the rolling median.
-    #[serde(default = "default_history_window")]
-    pub window: usize,
-    /// Samples required before relative regression gates activate.
-    #[serde(default = "default_history_min_samples")]
-    pub min_samples: usize,
-    /// Fail during warm-up instead of recording evidence and passing.
-    #[serde(default)]
-    pub require_history: bool,
-    /// Maximum permitted p99 latency increase in percent.
-    #[serde(default = "default_history_p99_regression_pct")]
-    pub max_p99_regression_pct: f64,
-    /// Maximum permitted error-rate increase in percentage points.
-    #[serde(default = "default_history_error_rate_regression_pp")]
-    pub max_error_rate_regression_pp: f64,
-    /// Optional maximum permitted aggregate throughput drop in percent.
-    #[serde(default = "default_history_rps_drop_pct")]
-    pub max_rps_drop_pct: Option<f64>,
-    /// Treat any increase in deadlocks as a regression.
-    #[serde(default = "history_deadlock_zero_tolerance")]
-    pub deadlock_zero_tolerance: bool,
-}
-
-fn default_history_directory() -> PathBuf {
-    PathBuf::from("./runs/history")
-}
-
-fn default_history_window() -> usize {
-    10
-}
-
-fn default_history_min_samples() -> usize {
-    3
-}
-
-fn default_history_p99_regression_pct() -> f64 {
-    10.0
-}
-
-fn default_history_error_rate_regression_pp() -> f64 {
-    0.5
-}
-
-fn default_history_rps_drop_pct() -> Option<f64> {
-    Some(10.0)
-}
-
-fn history_deadlock_zero_tolerance() -> bool {
-    true
 }
 
 impl OutputConfig {
@@ -608,7 +546,6 @@ impl OutputConfig {
         Self {
             report_dir,
             formats,
-            history: None,
         }
     }
 }
@@ -618,7 +555,6 @@ impl Default for OutputConfig {
         Self {
             report_dir: default_report_dir(),
             formats: default_formats(),
-            history: None,
         }
     }
 }

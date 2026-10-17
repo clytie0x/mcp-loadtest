@@ -95,16 +95,14 @@ if find "$deadlock_root" -mindepth 1 -print -quit | grep -q .; then
   fail "new Action report root was not empty"
 fi
 
-mcp_loadtest_prepare_report_target cross "$runner_temp" --tool echo
-assert_eq "multiple" "$MCP_LOADTEST_REPORT_MODE" "cross report mode"
-cross_root="$MCP_LOADTEST_REPORT_ROOT"
-[ "$cross_root" != "$deadlock_root" ] || fail "separate invocations reused a report root"
+if mcp_loadtest_prepare_report_target cross "$runner_temp" --tool echo 2>/dev/null; then
+  fail "removed cross command was accepted"
+fi
 
 mcp_loadtest_prepare_report_target run "$runner_temp" --config bench.toml
 assert_eq "single" "$MCP_LOADTEST_REPORT_MODE" "run report mode"
 run_root="$MCP_LOADTEST_REPORT_ROOT"
 [ "$run_root" != "$deadlock_root" ] || fail "run reused a prior report root"
-[ "$run_root" != "$cross_root" ] || fail "run reused the cross report root"
 
 mcp_loadtest_prepare_report_target doctor "$runner_temp" --runs-dir ./somewhere
 assert_eq "none" "$MCP_LOADTEST_REPORT_MODE" "doctor report mode"
@@ -114,11 +112,6 @@ if mcp_loadtest_prepare_report_target \
   deadlock-probe "$runner_temp" --output-dir "${tmp_dir}/caller" 2>/dev/null
 then
   fail "caller-controlled deadlock --output-dir was accepted"
-fi
-if mcp_loadtest_prepare_report_target \
-  cross "$runner_temp" --output-dir="${tmp_dir}/caller" 2>/dev/null
-then
-  fail "caller-controlled cross --output-dir was accepted"
 fi
 if mcp_loadtest_prepare_report_target \
   run "$runner_temp" --config bench.toml --action-output-dir "${tmp_dir}/caller" 2>/dev/null

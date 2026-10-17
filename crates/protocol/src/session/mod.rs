@@ -70,9 +70,7 @@ pub enum SessionError {
     },
     /// A success response belonged to a different request id.
     ///
-    /// The opaque result is retained so the raw protocol fuzzer can
-    /// distinguish “server accepted the malformed request” from a rejection;
-    /// it is intentionally omitted from the Display string.
+    /// The opaque result is intentionally omitted from the Display string.
     #[error("id mismatch: sent {expected}, got {got} (success response)")]
     MismatchedSuccessResponse {
         /// Numeric id sent by this session.
@@ -83,8 +81,7 @@ pub enum SessionError {
         result: Value,
     },
     /// A structured JSON-RPC error response belonged to a different request
-    /// id. Retaining the error code lets the raw fuzzer tell an expected
-    /// malformed-input rejection from an internal server error.
+    /// id.
     #[error("id mismatch: sent {expected}, got {got} ({error})")]
     MismatchedErrorResponse {
         /// Numeric id sent by this session.

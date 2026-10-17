@@ -53,9 +53,6 @@ pub struct MetricsDocumentV1 {
     /// Failed or timed-out teardown count. Omitted when zero.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub teardown_failure_count: u64,
-    /// Expected protocol-fuzzer rejection count. Omitted when zero.
-    #[serde(default, skip_serializing_if = "is_zero_u64")]
-    pub expected_rejection_count: u64,
     /// Trace artifact path, when tracing was requested.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trace_path: Option<String>,
@@ -101,7 +98,6 @@ impl From<&Report> for MetricsDocumentV1 {
             divergence_count: report.scenario_outcome.divergence_count,
             incomplete_worker_count: report.scenario_outcome.incomplete_worker_count,
             teardown_failure_count: report.scenario_outcome.teardown_failure_count,
-            expected_rejection_count: report.metrics.outcomes.expected_rejection,
             trace_path: report
                 .trace_path
                 .as_ref()
@@ -191,7 +187,7 @@ impl From<&LatencyStats> for LatencyDocumentV1 {
 pub struct ThroughputDocumentV1 {
     /// Total requests observed by the recorder.
     pub total_requests: u64,
-    /// Successful requests, including expected fuzzer rejections.
+    /// Successful requests.
     pub successful_requests: u64,
     /// Mean requests per second.
     pub requests_per_sec: f64,

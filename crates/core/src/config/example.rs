@@ -16,7 +16,7 @@ pub fn example_config() -> String {
 command = "python"
 # CLI args passed to `command`. Empty list = none.
 args = ["-m", "my_mcp"]
-# Transport: "stdio", "http", "sse", or "ws".
+# Transport: "stdio", "http", or "sse".
 transport = "stdio"
 # Time budget for the `initialize` round-trip. humantime: "10s", "500ms", "1m".
 startup_timeout = "10s"
@@ -37,7 +37,7 @@ LOG_LEVEL = "warn"
 
 [scenario]
 # Scenario kind: one of "sustained", "deadlock_probe", "cold_start",
-# "spike", "ramp", "soak", "race_check", "fuzzer", or "pattern".
+# "race_check", "pattern", or "version_matrix".
 type = "sustained"
 # How long the scenario drives traffic.
 duration = "60s"
@@ -83,7 +83,8 @@ memory_growth_mb = 50.0
 [output]
 # Where per-run dirs are created. Each run gets its own timestamped subdir.
 report_dir = "./runs"
-# Output formats to emit. Any subset of "terminal", "markdown", "json", "html".
+# Output formats to emit. Any subset of "terminal", "markdown", "json", "junit",
+# "prometheus".
 formats = ["terminal", "markdown", "json"]
 "#
     .to_string()

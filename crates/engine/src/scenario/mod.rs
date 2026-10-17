@@ -18,15 +18,11 @@ use mcp_loadtest_protocol::transport::TransportError;
 
 pub mod cold_start;
 pub mod deadlock_probe;
-pub mod fuzzer;
 pub mod pattern;
 // Not a scenario: internal session-pool driver shared by pooled scenarios
-// (`sustained` today; ramp/spike next). See ADR 0017.
+// See ADR 0017.
 pub(crate) mod pool;
 pub mod race_check;
-pub mod ramp;
-pub mod soak;
-pub mod spike;
 pub mod sustained;
 pub(crate) mod teardown;
 pub mod version_matrix;
@@ -127,7 +123,7 @@ impl RunContext {
 pub use mcp_loadtest_core::outcome::ScenarioOutcome;
 
 /// Map a [`SessionError`] to the [`CallOutcome`] bucket used by the metrics
-/// recorder. Shared by `pattern`, `ramp`, and `soak` — when a new error case
+/// recorder. Shared by the scenarios — when a new error case
 /// is added to `SessionError` it must be added here exactly once.
 pub(crate) fn classify_error(err: &SessionError) -> CallOutcome {
     use SessionError as E;

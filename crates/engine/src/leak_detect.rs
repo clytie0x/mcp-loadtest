@@ -1,9 +1,4 @@
-//! Linear-regression leak / drift detector.
-//!
-//! Extracted from `scenario/soak.rs` during the M8 file-split pass so the
-//! scenario file can stay focused on the scenario loop and the helper can
-//! grow its own surface (e.g. weighted regression for late-window emphasis,
-//! confidence intervals) without bloating the parent.
+//! Linear-regression leak detector for the RSS leak threshold.
 
 /// Simple linear-regression slope on a `(t, y)` timeseries.
 ///
@@ -12,23 +7,13 @@
 /// to fit a line (fewer than 2 distinct `t` values).
 ///
 /// Intercept is intentionally discarded — for leak/drift detection only the
-/// slope matters. Caller compares against a configured threshold. Two
-/// callers exist today: the soak scenario fits its latency-mean trajectory
-/// against `Soak::latency_drift_ms_per_sec`, and the run orchestrator's
-/// threshold evaluation (`run/thresholds.rs`) fits the sampled RSS series
-/// against the opt-in
+/// slope matters. The run orchestrator's threshold evaluation
+/// (`run/thresholds.rs`) fits the sampled RSS series against the opt-in
 /// [`mcp_loadtest_core::config::ThresholdsConfig::rss_leak_mb_per_sec`] budget.
 ///
 /// Numerically the implementation uses the centred-data form to avoid
-/// catastrophic cancellation on long soaks where `t` is large but `Δt`
+/// catastrophic cancellation on long runs where `t` is large but `Δt`
 /// per sample is small.
-///
-/// Must stay `pub` (not `pub(crate)`): `tests/soak.rs` is an integration
-/// test compiled as an external crate (Cargo treats `tests/*.rs` as
-/// separate binaries), so `use mcp_loadtest::scenario::soak::detect_leak;`
-/// only resolves against the public API surface. The parent module
-/// `scenario::soak` re-exports this function so the historical path
-/// `scenario::soak::detect_leak` keeps resolving after the split.
 pub fn detect_leak(samples: &[(f64, f64)]) -> Option<f64> {
     if samples.len() < 2 {
         return None;

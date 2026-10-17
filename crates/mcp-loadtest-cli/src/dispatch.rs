@@ -3,7 +3,7 @@
 
 use anyhow::{Context, Result};
 
-use mcp_loadtest_cli::{cmd_compare, cmd_cross, cmd_deadlock, cmd_doctor, cmd_run};
+use mcp_loadtest_cli::{cmd_compare, cmd_deadlock, cmd_doctor, cmd_run};
 
 use crate::Cmd;
 use crate::cmd_replay;
@@ -36,11 +36,7 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
             println!(
                 "cold_start       — respawns a fresh server per iteration; measures spawn→initialize handshake + first call"
             );
-            println!("spike            — baseline → burst → cooldown workload");
-            println!("ramp             — stepped concurrency + optional breaking-point detection");
-            println!("soak             — long steady run with periodic samples and drift notes");
             println!("race_check       — identical calls + response-divergence detection");
-            println!("fuzzer           — malformed payload probe");
             println!("pattern          — weighted multi-step tool-call sequences");
             println!(
                 "version_matrix   — drives the same server once per MCP protocol revision and diffs the outcomes"
@@ -137,28 +133,6 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
                 action_redact_server_identity,
             )
             .await
-        }
-        Cmd::Cross {
-            servers,
-            tool,
-            args,
-            duration,
-            scenario,
-            output_dir,
-            action_redact_server_identity,
-        } => {
-            let cross_args = cmd_cross::CrossArgs {
-                servers,
-                tool,
-                args,
-                duration: cmd_run::parse_dur_str(&duration)?,
-                scenario: cmd_cross::CrossScenario::parse(&scenario)?,
-                output_dir,
-                redact_server_identity: action_redact_server_identity,
-            };
-            let outcome = cmd_cross::run(cross_args).await?;
-            print_stdout(&outcome.rendered);
-            outcome.gate()
         }
         Cmd::Serve { mcp } => {
             if !mcp {
