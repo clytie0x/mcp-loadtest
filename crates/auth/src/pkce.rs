@@ -17,7 +17,7 @@ use crate::{AuthError, AuthResult, ScopeSet};
 pub struct PendingAuthorization {
     authorization_url: Url,
     redirect_uri: Url,
-    resource: Url,
+    resource: String,
     client_id: String,
     verifier: SecretValue,
     state: SecretValue,
@@ -79,7 +79,7 @@ impl PendingAuthorization {
                 .append_pair("code_challenge", &challenge)
                 .append_pair("code_challenge_method", "S256")
                 .append_pair("state", state.expose())
-                .append_pair("resource", context.resource.as_str());
+                .append_pair("resource", context.resource_identifier());
             if !scopes.is_empty() {
                 query.append_pair("scope", &scopes.to_oauth_string());
             }
@@ -87,7 +87,7 @@ impl PendingAuthorization {
         Ok(Self {
             authorization_url,
             redirect_uri,
-            resource: context.resource.clone(),
+            resource: context.resource_identifier().to_owned(),
             client_id: registration.client_id().to_owned(),
             verifier,
             state,
@@ -139,7 +139,7 @@ pub struct CompletedAuthorization {
     pub(crate) code: SecretValue,
     pub(crate) verifier: SecretValue,
     pub(crate) redirect_uri: Url,
-    pub(crate) resource: Url,
+    pub(crate) resource: String,
     pub(crate) client_id: String,
     pub(crate) scopes: ScopeSet,
 }
@@ -228,6 +228,29 @@ mod tests {
         assert_eq!(query.get("resource").unwrap(), "https://mcp.example/mcp");
         assert_eq!(query.get("scope").unwrap(), "mcp:read");
         assert!(query.contains_key("state"));
+    }
+
+    #[test]
+    fn resource_parameter_is_the_advertised_identifier_byte_for_byte() {
+        // A pathless identifier parses to a `Url` that serializes with a
+        // trailing "/"; the request must carry the PRM value exactly.
+        let mut context = context(true);
+        context.resource = Url::parse("https://mcp.example").expect("url");
+        context.protected_resource.resource = "https://mcp.example".to_owned();
+        let registration =
+            ClientRegistration::pre_registered(crate::PreRegisteredClient::new("client").unwrap());
+        let redirect = Url::parse("http://127.0.0.1:8080/callback").expect("url");
+        let pending =
+            PendingAuthorization::begin(&context, &registration, redirect, ScopeSet::default())
+                .expect("pending");
+        let resource = pending
+            .authorization_url()
+            .query_pairs()
+            .find(|(name, _)| name == "resource")
+            .expect("resource")
+            .1
+            .into_owned();
+        assert_eq!(resource, "https://mcp.example");
     }
 
     #[test]

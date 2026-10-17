@@ -109,7 +109,7 @@ impl<S: TokenStore> OAuthProvider<S> {
             .client_credentials(
                 &context.authorization_server,
                 &self.registration,
-                &context.resource,
+                context.resource_identifier(),
                 scopes,
             )
             .await?;
@@ -146,7 +146,7 @@ impl<S: TokenStore> OAuthProvider<S> {
             .refresh(
                 &context.authorization_server,
                 &self.registration,
-                &context.resource,
+                context.resource_identifier(),
                 &current,
             )
             .await?;
@@ -173,7 +173,7 @@ impl<S: TokenStore> OAuthProvider<S> {
     fn key(&self, context: &AuthorizationContext) -> TokenKey {
         TokenKey::new(
             context.authorization_server.issuer.clone(),
-            context.resource.as_str(),
+            context.resource_identifier(),
             self.registration.client_id(),
         )
     }
