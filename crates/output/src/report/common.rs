@@ -118,8 +118,23 @@ pub fn failure_reasons(report: &Report) -> Vec<String> {
             if errors == 1 { "" } else { "s" }
         ));
     }
+    // A diagnostic cohort fails on a single late response even when every
+    // call eventually succeeded; deadlocked calls are already counted above.
+    let diagnostic = matches!(
+        report.scenario_name.as_str(),
+        "race_check" | "deadlock_probe" | "lost_update"
+    );
+    let late = u64::from(report.scenario_outcome.hang_count).max(report.metrics.outcomes.hang);
+    if diagnostic && late > 0 {
+        parts.push(format!(
+            "{late} response{} past the hang threshold",
+            if late == 1 { "" } else { "s" }
+        ));
+    }
     let incomplete_workers = report.scenario_outcome.incomplete_worker_count;
-    if incomplete_workers > 0 && report.scenario_name != "race_check" {
+    let named_as_incomplete_cohort =
+        report.scenario_name == "race_check" && report.scenario_outcome.error_count > 0;
+    if incomplete_workers > 0 && !named_as_incomplete_cohort {
         parts.push(format!(
             "{incomplete_workers} incomplete pooled worker{}",
             if incomplete_workers == 1 { "" } else { "s" }
@@ -136,6 +151,8 @@ pub fn failure_reasons(report: &Report) -> Vec<String> {
         parts.push("no calls attempted".to_owned());
     } else if report.scenario_outcome.successful_calls == 0 && dc == 0 {
         parts.push("no successful calls".to_owned());
+    } else if report.scenario_outcome.successful_calls > report.scenario_outcome.total_calls {
+        parts.push("more successful calls than attempts".to_owned());
     }
     let recorded = &report.metrics.outcomes;
     if dc == 0 && recorded.deadlock > 0 {
@@ -171,7 +188,99 @@ pub fn failure_reasons(report: &Report) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::SystemTime;
+
+    use mcp_loadtest_core::metrics::ScenarioMetrics;
+    use mcp_loadtest_core::outcome::ScenarioOutcome;
+    use mcp_loadtest_core::report::{ProcessStats, ServerInfo};
+
     use super::*;
+
+    fn passing_report(scenario_name: &str) -> Report {
+        let mut report = Report {
+            run_id: "01TEST".into(),
+            started_at: SystemTime::UNIX_EPOCH,
+            duration: Duration::from_secs(1),
+            scenario_name: scenario_name.into(),
+            server_info: ServerInfo {
+                command: "true".into(),
+                args: Vec::new(),
+                pid: None,
+                protocol_version: None,
+            },
+            metrics: ScenarioMetrics::default(),
+            process: ProcessStats::default(),
+            scenario_outcome: ScenarioOutcome::default(),
+            trace_path: None,
+            threshold_violations: Vec::new(),
+            coverage: None,
+            per_tool: Default::default(),
+        };
+        report.scenario_outcome.total_calls = 10;
+        report.scenario_outcome.successful_calls = 10;
+        report.metrics.outcomes.success = 10;
+        report
+    }
+
+    /// `serve --mcp` and the CLI tell an agent why a run failed through this
+    /// list, so every way `Report::passed` can fail must name a reason.
+    #[test]
+    fn every_failing_report_has_a_reason() {
+        type Breakage = fn(&mut Report);
+        let breakages: [(&str, Breakage); 14] = [
+            ("no calls", |r| r.scenario_outcome.total_calls = 0),
+            ("no successes", |r| r.scenario_outcome.successful_calls = 0),
+            ("successes exceed attempts", |r| {
+                r.scenario_outcome.successful_calls = 11
+            }),
+            ("deadlock", |r| r.scenario_outcome.deadlock_count = 1),
+            ("divergence", |r| r.scenario_outcome.divergence_count = 1),
+            ("lost update", |r| r.scenario_outcome.lost_update_count = 1),
+            ("incomplete worker", |r| {
+                r.scenario_outcome.incomplete_worker_count = 1
+            }),
+            ("teardown", |r| {
+                r.scenario_outcome.teardown_failure_count = 1
+            }),
+            ("error", |r| r.scenario_outcome.error_count = 1),
+            ("scenario hang", |r| r.scenario_outcome.hang_count = 1),
+            ("recorded hang", |r| r.metrics.outcomes.hang = 1),
+            ("recorded deadlock", |r| r.metrics.outcomes.deadlock = 1),
+            ("recorded crash", |r| r.metrics.outcomes.crash = 1),
+            ("recorded malformed", |r| r.metrics.outcomes.malformed = 1),
+        ];
+        for scenario in [
+            "race_check",
+            "deadlock_probe",
+            "lost_update",
+            "cold_start",
+            "sustained",
+            "pattern",
+        ] {
+            assert!(passing_report(scenario).passed(), "{scenario} baseline");
+            for (name, breakage) in breakages {
+                let mut report = passing_report(scenario);
+                breakage(&mut report);
+                if !report.passed() {
+                    assert!(
+                        !failure_reasons(&report).is_empty(),
+                        "{scenario} failed on {name} with no failure reason"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn late_diagnostic_response_is_named() {
+        let mut report = passing_report("race_check");
+        report.scenario_outcome.hang_count = 1;
+        report.metrics.outcomes.hang = 1;
+        assert_eq!(
+            failure_reasons(&report),
+            vec!["1 response past the hang threshold".to_owned()]
+        );
+    }
 
     #[test]
     fn fmt_duration_buckets() {

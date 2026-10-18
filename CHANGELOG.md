@@ -46,6 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pushing a tag from a local clone. See
   [ADR 0028](docs/adr/0028-dispatched-release-tagging.md).
 
+### Fixed
+
+- `failure_reasons` names every way a run can fail. A `race_check`,
+  `deadlock_probe`, or `lost_update` run with a response past the hang
+  threshold failed with an empty list, so `serve --mcp` returned
+  `passed: false` with no reason and the CLI printed `failed — ;`. A
+  race-check worker that did not finish without recording an error, and a
+  report claiming more successes than attempts, were also unnamed.
+
 ## [0.3.0] — Release contents
 
 This section describes the source contents intended for `v0.3.0`. Its presence
