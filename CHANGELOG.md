@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The release workflow names the cause when its immutable-release audit
+  token is rejected: expired or revoked (HTTP 401), or missing access or
+  permission (HTTP 403/404). It used to fail with gh's bare
+  `Bad credentials`.
 - `tag-release` workflow: dispatched from `main` with a version and a
   commit, it checks that CI passed on the commit, creates the annotated
   release tag through `scripts/release-tag.sh`, and dispatches `release.yml`.
