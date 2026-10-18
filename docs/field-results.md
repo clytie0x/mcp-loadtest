@@ -154,7 +154,8 @@ was already fixed upstream before this run, so no report was filed.
   concurrent phase: the control entity was gone after every run.
 - **Counts agree.** The entities left in each file equal the acknowledged
   concurrent writes minus the lost ones (40 − 28, 40 − 35, 39 − 35). The
-  control entity is not counted by the detector and was lost as well.
+  control entity was lost as well. These runs predate the change that
+  counts a lost control write, so the lost-update counts above exclude it.
 - **Exposure:** any deployment where more than one process uses the same
   store (several agents or editor windows, or one client restarting a
   server while another runs) can lose memories with no error. The upstream
