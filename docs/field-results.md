@@ -211,5 +211,4 @@ reported upstream yet.
 
 ### Gate status
 
-A clean pass for the server. Both tool defects are fixed on `main` once
-clytie0x/mcp-loadtest#23 merges.
+A clean pass for the server. Both tool defects are fixed on `main`.
