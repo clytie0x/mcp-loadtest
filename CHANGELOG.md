@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `tag-release` workflow: dispatched from `main` with a version and a
+  commit, it checks that CI passed on the commit, creates the annotated
+  release tag through `scripts/release-tag.sh`, and dispatches `release.yml`.
+  Maintainers, or an agent acting on their confirmation, can release without
+  pushing a tag from a local clone. See
+  [ADR 0028](docs/adr/0028-dispatched-release-tagging.md).
+
 ## [0.3.0] — Release contents
 
 This section describes the source contents intended for `v0.3.0`. Its presence

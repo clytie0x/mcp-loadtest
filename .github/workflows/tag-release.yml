@@ -1,0 +1,84 @@
+name: tag-release
+
+# Creates the annotated release tag on a reviewed commit already on main,
+# then dispatches release.yml for it (ADR 0028). Tags pushed with
+# GITHUB_TOKEN do not trigger push workflows, so the release is started by
+# workflow_dispatch, which GITHUB_TOKEN may trigger.
+#
+# Dispatching this workflow is the maintainer's release action: it has the
+# same effect as pushing the tag by hand (docs/RELEASE.md, Gate C).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without the v prefix (e.g. 0.3.0)"
+        required: true
+      sha:
+        description: "Full 40-character commit on main to tag"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tag-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: tag and dispatch release
+    # Only the reviewed workflow on main may create release tags.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Require green CI on the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ inputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::sha must be a full 40-character commit id"
+            exit 1
+          }
+          green="$(
+            gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${RELEASE_SHA}&status=success" \
+              --jq '.total_count'
+          )"
+          test "$green" -gt 0 || {
+            echo "::error::CI has no successful run on ${RELEASE_SHA}"
+            exit 1
+          }
+
+      - name: Create and push the annotated tag
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_SHA: ${{ inputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bash scripts/release-tag.sh "$RELEASE_VERSION" "$RELEASE_SHA" --push
+
+      - name: Dispatch the release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f "tag=v${RELEASE_VERSION}"
+          {
+            echo "Tagged \`v${RELEASE_VERSION}\` and dispatched \`release.yml\`."
+            echo "Follow it under Actions → release."
+          } >>"$GITHUB_STEP_SUMMARY"

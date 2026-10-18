@@ -229,6 +229,22 @@ test "$(git rev-parse 'v0.3.0^{commit}')" = "$(git rev-parse HEAD)"
 git push origin refs/tags/v0.3.0
 ```
 
+Alternatively, once the candidate is merged to `main`, the same confirmation
+may be carried out by dispatching `.github/workflows/tag-release.yml`
+(ADR 0028), for example by an agent acting for the maintainer:
+
+```bash
+gh workflow run tag-release.yml --ref main \
+  -f version=0.3.0 -f sha=<approved-candidate-commit>
+```
+
+It runs only from `main`, requires a successful CI run on the commit, and
+calls `scripts/release-tag.sh`, which refuses a commit that is not on `main`,
+a `Cargo.toml` version or changelog section that does not match, and a tag
+that already exists. It then pushes the annotated tag and dispatches
+`release.yml` for it. Dispatching it is the release action; it needs the
+same explicit confirmation as a manual tag push.
+
 If the workflow failed before creating any Release, rerun against the same
 existing tag with `workflow_dispatch`; do not recreate or move the tag:
 
