@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `serve --mcp` tools that spawn the target accept `env`, `working_dir`, and
+  `startup_timeout_ms`. An agent can now probe servers that read their
+  configuration from the environment (a data file path, an API key) and
+  servers that are slow to start, such as `npx` downloading on first use.
 - The release workflow names the cause when its immutable-release audit
   token is rejected: expired or revoked (HTTP 401), or missing access or
   permission (HTTP 403/404). It used to fail with gh's bare

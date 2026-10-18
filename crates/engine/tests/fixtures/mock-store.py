@@ -3,6 +3,9 @@
 
     mock-store.py --mode racy|safe|memory [--store PATH]
 
+PATH defaults to $MOCK_STORE_PATH; a relative PATH resolves against the
+working directory.
+
 - racy:   read-modify-write of a JSON list in PATH with no lock and a short
           pause in between, so concurrent processes overwrite each other.
 - safe:   one file per item under the directory PATH, published with an
@@ -53,7 +56,7 @@ def arg(name, default=None):
 
 
 MODE = arg("--mode", "safe")
-STORE = arg("--store")
+STORE = arg("--store", os.environ.get("MOCK_STORE_PATH"))
 MEMORY = []
 WRITES = 0
 

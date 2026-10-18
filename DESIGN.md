@@ -1397,8 +1397,12 @@ mcp-loadtest is a tool that AI agents will both **operate** (Claude Code running
 ### 21.2 Self-hosted MCP server: `mcp-loadtest serve --mcp`
 
 Agents are the primary users of this mode. It exposes seven tools, listed in
-the order an agent typically calls them. Every run tool also takes an optional
-`report_dir` (default `./runs`).
+the order an agent typically calls them. Every tool that takes
+`server_command` also takes optional `env` (extra variables for each server
+process), `working_dir`, and `startup_timeout_ms` (initialize budget, default
+10000). Every run tool also takes an optional `report_dir` (default `./runs`).
+Env values are passed to the server only and are not written to run
+artifacts.
 
 | Tool                | Args                                                                     | Returns (besides the verdict fields)                 |
 | ------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------- |
