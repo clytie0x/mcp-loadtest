@@ -26,6 +26,10 @@ fn server_command(fixture: &str) -> String {
     format!("{python} {path}")
 }
 
+/// Initialize budget for every fixture spawn. Cold Python starts on a loaded
+/// Windows runner have exceeded the 10 s default.
+const STARTUP_TIMEOUT_MS: u64 = 60_000;
+
 fn assert_verdict(result: &Value, expect_pass: bool) {
     assert_eq!(result["passed"], expect_pass, "{result:#}");
     let reasons = result["failure_reasons"]
@@ -40,7 +44,10 @@ fn assert_verdict(result: &Value, expect_pass: bool) {
 async fn list_target_tools_returns_names_and_schemas() {
     let result = dispatch(
         "list_target_tools",
-        &json!({ "server_command": server_command("mock-normal.py") }),
+        &json!({
+            "server_command": server_command("mock-normal.py"),
+            "startup_timeout_ms": STARTUP_TIMEOUT_MS,
+        }),
     )
     .await
     .expect("list_target_tools");
@@ -57,6 +64,7 @@ async fn race_check_passes_a_deterministic_tool() {
         "race_check",
         &json!({
             "server_command": server_command("mock-normal.py"),
+            "startup_timeout_ms": STARTUP_TIMEOUT_MS,
             "tool": "echo",
             "concurrent": 3,
             "args": { "x": 1 },
@@ -76,6 +84,7 @@ async fn race_check_fails_with_a_reason_when_responses_diverge() {
         "race_check",
         &json!({
             "server_command": server_command("mock-process-id.py"),
+            "startup_timeout_ms": STARTUP_TIMEOUT_MS,
             "tool": "process_id",
             "concurrent": 3,
         }),
@@ -95,6 +104,7 @@ async fn cold_start_times_handshake_and_first_call_separately() {
         "cold_start",
         &json!({
             "server_command": server_command("mock-normal.py"),
+            "startup_timeout_ms": STARTUP_TIMEOUT_MS,
             "tool": "echo",
             "iterations": 3,
             "warmup": true,
@@ -146,6 +156,7 @@ async fn lost_update_reports_missing_writes_with_a_reason() {
                 server_command("mock-store.py"),
                 store.display()
             ),
+            "startup_timeout_ms": STARTUP_TIMEOUT_MS,
             "write_tool": "append",
             "write_args": { "item": "{marker}" },
             "read_tool": "read",
@@ -187,7 +198,7 @@ async fn env_and_working_dir_reach_every_server_process() {
             "server_command": format!("{} --mode safe", server_command("mock-store.py")),
             "env": { "MOCK_STORE_PATH": "store" },
             "working_dir": scratch.0.display().to_string(),
-            "startup_timeout_ms": 20000,
+            "startup_timeout_ms": STARTUP_TIMEOUT_MS,
             "write_tool": "append",
             "write_args": { "item": "{marker}" },
             "read_tool": "read",
@@ -213,6 +224,7 @@ async fn env_and_working_dir_reach_every_server_process() {
             "server_command": format!("{} --mode safe", server_command("mock-store.py")),
             "env": { "MOCK_STORE_PATH": "store" },
             "working_dir": scratch.0.display().to_string(),
+            "startup_timeout_ms": STARTUP_TIMEOUT_MS,
         }),
     )
     .await
