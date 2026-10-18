@@ -3,7 +3,7 @@
 
 use anyhow::{Context, Result};
 
-use mcp_loadtest_cli::{cmd_compare, cmd_deadlock, cmd_doctor, cmd_run};
+use mcp_loadtest_cli::{cmd_compare, cmd_deadlock, cmd_detect, cmd_doctor, cmd_run};
 
 use crate::Cmd;
 use crate::cmd_replay;
@@ -134,6 +134,51 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
                 &args,
                 &output_dir,
                 action_redact_server_identity,
+            )
+            .await
+        }
+        Cmd::RaceCheck {
+            server,
+            tool,
+            concurrent,
+            args,
+            env,
+            startup_timeout,
+            output_dir,
+        } => {
+            let target = cmd_detect::DetectTarget {
+                server,
+                env,
+                startup_timeout: cmd_run::parse_dur_str(&startup_timeout)?,
+            };
+            cmd_detect::run_race_check(&target, &tool, concurrent, &args, &output_dir).await
+        }
+        Cmd::LostUpdate {
+            server,
+            write_tool,
+            write_args,
+            read_tool,
+            read_args,
+            concurrent,
+            writes_per_worker,
+            env,
+            startup_timeout,
+            output_dir,
+        } => {
+            let target = cmd_detect::DetectTarget {
+                server,
+                env,
+                startup_timeout: cmd_run::parse_dur_str(&startup_timeout)?,
+            };
+            cmd_detect::run_lost_update(
+                &target,
+                &write_tool,
+                &write_args,
+                &read_tool,
+                &read_args,
+                concurrent,
+                writes_per_worker,
+                &output_dir,
             )
             .await
         }

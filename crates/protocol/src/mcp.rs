@@ -119,6 +119,11 @@ pub struct Tool {
     /// when it does, its results MUST carry conforming `structuredContent`.
     #[serde(rename = "outputSchema", default)]
     pub output_schema: Option<Value>,
+    /// Behavior hints the server advertises (`readOnlyHint`,
+    /// `destructiveHint`, `idempotentHint`, `openWorldHint`, ...), kept as
+    /// raw JSON. Hints are untrusted descriptions, not guarantees.
+    #[serde(default)]
+    pub annotations: Option<Value>,
 }
 
 /// Parameters for a `tools/call` request.
@@ -389,6 +394,18 @@ mod tests {
             .as_ref()
             .expect("outputSchema");
         assert_eq!(schema["required"][0], "answer");
+    }
+
+    #[test]
+    fn tool_annotations_parse_when_advertised() {
+        let raw = r#"{"tools":[
+            {"name":"read","inputSchema":{"type":"object"},
+             "annotations":{"readOnlyHint":true,"title":"Read"}},
+            {"name":"echo","inputSchema":{"type":"object"}}]}"#;
+        let result: ListToolsResult = serde_json::from_str(raw).unwrap();
+        let hints = result.tools[0].annotations.as_ref().expect("annotations");
+        assert_eq!(hints["readOnlyHint"], true);
+        assert!(result.tools[1].annotations.is_none());
     }
 
     #[test]
