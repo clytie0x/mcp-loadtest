@@ -53,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Shutting down a server started through a launcher (`uvx`, `npx`, a shell
+  script) also kills the server the launcher started. The forced-kill and
+  drop paths used to kill only the launcher, so a server that ignored stdin
+  EOF kept running after the run ended. A lost-update run against
+  mcp-server-sqlite through `uvx` left 12 server processes behind.
 - The stderr capture pump writes to the log file in 64 KiB blocks instead of
   once per line. A server that logged a burst used to block on its full
   stderr pipe while the pump caught up: its latency was skewed, and at

@@ -120,7 +120,9 @@ impl StdioTransport {
             }
         };
 
+        let identity = child.id().and_then(super::tree::ProcessIdentity::of);
         Ok(Self {
+            identity,
             child: Some(child),
             stdin: Some(stdin),
             stdout: BufReader::new(stdout),
