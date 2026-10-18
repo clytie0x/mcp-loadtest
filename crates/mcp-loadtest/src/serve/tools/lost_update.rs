@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 use crate::scenario::lost_update::LostUpdate;
 
-use super::{ToolError, required_str, run_stdio, run_target, u32_arg, verdict};
+use super::{ToolError, required_str, run_scenario, run_target, u32_arg, verdict};
 
 pub(super) fn lost_update_def() -> Value {
     json!({
@@ -48,7 +48,7 @@ pub(super) fn lost_update_def() -> Value {
                     "type": "integer",
                     "minimum": 2,
                     "default": 10,
-                    "description": "Independent sessions writing at once (each its own server process)."
+                    "description": "Independent sessions writing at once (with server_command, each is its own server process)."
                 },
                 "writes_per_worker": {
                     "type": "integer",
@@ -79,7 +79,7 @@ pub(super) async fn lost_update(args: &Value) -> Result<Value, ToolError> {
     if let Some(message) = plan.validation_error() {
         return Err(ToolError::InvalidArgs(message.into()));
     }
-    let report = run_stdio(&target, "lost_update", Box::new(plan)).await?;
+    let report = run_scenario(&target, "lost_update", Box::new(plan)).await?;
 
     let mut out = verdict(&report, &target);
     out.insert(
