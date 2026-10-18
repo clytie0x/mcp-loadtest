@@ -2,9 +2,11 @@
 //!
 //! - `racy`: an unlocked read-modify-write on a shared file loses writes,
 //!   so the run must fail with `lost_update_count > 0`.
-//! - `safe`: append-only writes keep every marker, so the run passes.
-//! - `memory`: each process keeps its own list, so the read sees only the
-//!   control write; the check is inconclusive, not a lost-update finding.
+//! - `safe`: one atomically published file per write keeps every marker,
+//!   so the run passes.
+//! - `memory`: each process keeps its own list, so the run session never
+//!   sees the control written on another session; the check is
+//!   inconclusive, not a lost-update finding.
 
 mod helpers;
 
@@ -113,7 +115,7 @@ async fn per_process_state_is_inconclusive_not_lost_updates() {
         outcome
             .notes
             .iter()
-            .any(|n| n.contains("do not appear to share state")),
+            .any(|n| n.contains("do not share state")),
         "{:?}",
         outcome.notes
     );

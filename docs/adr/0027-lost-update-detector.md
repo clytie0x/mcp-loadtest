@@ -28,9 +28,12 @@ Add a `lost_update` scenario, a CLI/config entry, and a `serve --mcp` tool.
   Fixed width and the delimiters keep one marker from being a substring of
   another. A `write_args` without `{marker}` is rejected before any process
   is spawned.
-- **Control first.** On the run session, one write and one read must show
-  the control marker. If not, the write/read pair cannot observe anything,
-  and the plan is rejected as invalid instead of yielding a false pass.
+- **Control first, across sessions.** One write on a fresh session, then
+  one read on the run session, must show the control marker. That proves the
+  read observes writes and that sessions share state. If it fails, the check
+  is inconclusive and stops before any concurrent write, instead of yielding
+  a false pass or a false finding (for example, a stdio server holding data
+  in process memory, where each session is its own process).
 - **Concurrent writes.** `concurrent` independent sessions, released
   through the pool's start gate (ADR [0017](0017-session-pool-in-scenario.md)),
   each send `writes_per_worker` writes. Only acknowledged writes are
@@ -38,11 +41,12 @@ Add a `lost_update` scenario, a CLI/config entry, and a `serve --mcp` tool.
 - **One final read.** Every acknowledged marker missing from the read's
   serialized result counts toward `lost_update_count`. A non-zero count
   fails `Report::passed()`, like `divergence_count`.
-- **Inconclusive, not lost.** If the read shows the control marker but none
-  of the concurrent ones, the sessions do not share state (for example, a
-  stdio server holding data in process memory). The run is reported as an
-  incomplete diagnostic with a note and does not count losses. The same
-  applies when no concurrent write was acknowledged.
+- **Inconclusive, not lost.** A failed control, or a run in which no
+  concurrent write was acknowledged, is reported as an incomplete diagnostic
+  with a note and counts no losses. Once the control has passed, a final
+  read that shows none of the markers counts all of them as lost: a store
+  that interleaved writes into unreadable data loses everything, and that
+  must fail the run rather than read as "state not shared".
 
 `lost_update_count` joins `ScenarioOutcome`, the metrics.json v1 wire
 format (omitted when zero, so v1 consumers see no change), the Prometheus,
@@ -55,6 +59,11 @@ also gain an optional `report_dir` (default `./runs`) and return the
 - **Per-worker argument lists in `race_check`.** This lets callers vary
   inputs but still compares responses, not state, so it cannot see an
   overwrite.
+- **Inferring "state not shared" from a final read with no concurrent
+  markers.** An early version did this. A racy store whose interleaved
+  writes leave unparseable data produces exactly that read, so a total loss
+  was reported as inconclusive. The cross-session control decides this
+  before any concurrency instead.
 - **Counter semantics (increment N times, expect N).** This only fits
   servers that expose a counter. An append/read pair with opaque markers
   works with any tool that stores text and returns it.

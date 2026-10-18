@@ -5,7 +5,9 @@
 
 - racy:   read-modify-write of a JSON list in PATH with no lock and a short
           pause in between, so concurrent processes overwrite each other.
-- safe:   one O_APPEND write per item in PATH, so nothing is lost.
+- safe:   one file per item under the directory PATH, published with an
+          atomic rename, so nothing is lost. (O_APPEND is not atomic across
+          processes on Windows, so it cannot model a safe store there.)
 - memory: a per-process list; other sessions never see it.
 """
 
@@ -53,6 +55,7 @@ def arg(name, default=None):
 MODE = arg("--mode", "safe")
 STORE = arg("--store")
 MEMORY = []
+WRITES = 0
 
 
 def append(item):
@@ -74,11 +77,14 @@ def append(item):
             # which is exactly an acknowledged-but-lost update.
             pass
     else:
-        fd = os.open(STORE, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-        try:
-            os.write(fd, (item + "\n").encode())
-        finally:
-            os.close(fd)
+        global WRITES
+        WRITES += 1
+        directory = pathlib.Path(STORE)
+        directory.mkdir(parents=True, exist_ok=True)
+        name = f"{os.getpid()}-{WRITES}"
+        tmp = directory / (name + ".tmp")
+        tmp.write_text(item)
+        os.replace(tmp, directory / (name + ".item"))
 
 
 def read_all():
@@ -93,7 +99,7 @@ def read_all():
         except (OSError, json.JSONDecodeError):
             # A concurrent writer truncated the file mid-read.
             return []
-    return [line for line in path.read_text().splitlines() if line]
+    return [item.read_text() for item in sorted(path.glob("*.item"))]
 
 
 def main():

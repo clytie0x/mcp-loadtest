@@ -3,19 +3,19 @@
 //! `race_check` sends identical arguments, so it cannot see one writer
 //! overwriting another. This scenario gives every write a unique marker:
 //!
-//! 1. Control: on the run session, write one marker and read it back. If the
-//!    read does not show it, the write/read pair cannot observe anything and
-//!    the plan is rejected.
+//! 1. Control: write one marker on a fresh session, then read on the run
+//!    session. Seeing it proves both that the read observes writes and that
+//!    sessions share state; otherwise the check is inconclusive and stops
+//!    before any concurrent write.
 //! 2. `concurrent` independent sessions, released through the pool's start
 //!    gate, each send `writes_per_worker` writes. `{marker}`, `{worker}` and
 //!    `{seq}` inside string values of `write_args` are substituted per call.
 //! 3. One read on the run session. Every marker whose write was acknowledged
 //!    must appear in it; each missing one counts as a lost update.
 //!
-//! If the read shows the control marker but none of the concurrent writes,
-//! the sessions do not share state (for example, a stdio server that keeps
-//! its data in process memory). That is reported as inconclusive, not as
-//! lost updates.
+//! Because step 1 already proved that state is shared, a final read that
+//! shows none of the acknowledged markers (for example, a store corrupted by
+//! interleaved writes) counts every one of them as lost.
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -57,20 +57,39 @@ impl Scenario for LostUpdate {
         if let Some(message) = self.validation_error() {
             return invalid_plan(message);
         }
-        if ctx.session_factory.is_none() {
+        let Some(factory) = ctx.session_factory.clone() else {
             return invalid_plan(
                 "a session_factory is required for concurrent sessions \
                  (Run::execute attaches one automatically)",
             );
-        }
+        };
         let nonce = format!("{:08x}", rand::random::<u32>());
         let mut outcome = ScenarioOutcome::default();
 
-        // 1. Control: the write must be visible to the read on one session.
+        // 1. Control: a write on a fresh session must be visible to a read on
+        //    the run session, which proves both that the read observes writes
+        //    and that sessions share state.
+        let mut probe = tokio::select! {
+            biased;
+            _ = ctx.cancel_token.cancelled() => {
+                outcome.notes.push("lost_update: cancelled before the control write".to_owned());
+                return outcome;
+            }
+            spawned = factory.spawn() => match spawned {
+                Ok(probe) => probe,
+                Err(err) => {
+                    outcome.error_count += 1;
+                    outcome
+                        .notes
+                        .push(format!("lost_update: control session failed to start: {err}"));
+                    return outcome;
+                }
+            },
+        };
         let control = marker(&nonce, "c", 0);
         let control_args = render(&self.write_args, "control", 0, &control);
-        if call(
-            session,
+        let written = call(
+            &mut probe,
             &self.write_tool,
             &control_args,
             ctx,
@@ -78,8 +97,9 @@ impl Scenario for LostUpdate {
             "control write",
         )
         .await
-        .is_none()
-        {
+        .is_some();
+        teardown::shutdown_session(probe, &mut outcome, "lost_update control session").await;
+        if !written {
             outcome
                 .notes
                 .push("lost_update: control write failed; cannot run the check".to_owned());
@@ -99,8 +119,10 @@ impl Scenario for LostUpdate {
             Some(_) => {
                 outcome.error_count += 1;
                 outcome.notes.push(format!(
-                    "lost_update: invalid plan — `{}` did not show the marker `{}` just \
-                     wrote on the same session",
+                    "lost_update inconclusive: `{}` on one session did not show the marker \
+                     `{}` wrote on another. Either the read does not return what the write \
+                     stored, or sessions do not share state (for example a stdio server that \
+                     keeps data in process memory)",
                     self.read_tool, self.write_tool
                 ));
                 return outcome;
@@ -190,16 +212,6 @@ impl Scenario for LostUpdate {
             .iter()
             .filter(|mark| !contains(&read, mark))
             .collect();
-        if missing.len() == acknowledged.len() {
-            outcome.error_count += 1;
-            outcome.notes.push(format!(
-                "lost_update inconclusive: the read shows the control write but none of the \
-                 {} concurrent writes; the sessions do not appear to share state (for example \
-                 a stdio server that keeps data in process memory)",
-                acknowledged.len()
-            ));
-            return outcome;
-        }
         outcome.lost_update_count = missing.len() as u64;
         if !missing.is_empty() {
             let preview: Vec<&str> = missing.iter().take(5).map(|m| m.as_str()).collect();

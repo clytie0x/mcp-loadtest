@@ -22,9 +22,10 @@ ADR 0025) and is breaking: see **Removed**.
   writes that each carry a unique `{marker}`, then one read must return every
   acknowledged marker. Missing markers set `lost_update_count`, which fails
   the run and appears in `metrics.json`, Prometheus, JUnit, and
-  `failure_reasons`. A control write/read on one session rejects plans whose
-  read cannot observe the write, and a read that sees none of the concurrent
-  writes is reported as inconclusive (sessions do not share state). See
+  `failure_reasons`. A control marker written on one session must be visible
+  to a read on another before any concurrent write; otherwise the check is
+  inconclusive (the read cannot observe writes, or sessions do not share
+  state). See
   [ADR 0027](docs/adr/0027-lost-update-detector.md).
 - `serve --mcp` run tools take an optional `report_dir` and return the
   `run_dir` holding the run's artifacts.
