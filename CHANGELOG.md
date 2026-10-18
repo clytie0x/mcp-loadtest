@@ -75,7 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was pinned. A connection that closes before the session is established now
   restarts the server once with the legacy handshake, and a one-time warning
   names the pin that avoids the extra start. Explicit versions never fall
-  back. See ADR 0029.
+  back, and a traced run fails with the same advice instead of recording a
+  trace that could not be replayed. See ADR 0029.
 
 ## [0.3.0] — Release contents
 

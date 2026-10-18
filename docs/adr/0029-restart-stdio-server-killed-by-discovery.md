@@ -32,6 +32,11 @@ pinning `protocol_version` skips the probe and the extra start.
   that closes the connection still fails.
 - There is one restart. If the legacy attempt also fails, that error is
   reported.
+- A traced run does not restart. The trace already holds the unanswered
+  probe, and a second process's handshake after it would make the trace
+  unreplayable (replay sends every recorded frame through one transport, and
+  the probe would kill the server again). The run fails with a warning to
+  pin `protocol_version`.
 - Both attempts share the session's startup deadline.
 
 ## Alternatives considered

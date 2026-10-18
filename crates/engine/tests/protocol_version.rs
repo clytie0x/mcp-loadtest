@@ -217,3 +217,31 @@ async fn pinned_stateless_version_does_not_fall_back() {
         "unexpected error: {error:?}"
     );
 }
+
+/// A traced run keeps its trace replayable: the failed probe is already
+/// recorded, so it fails instead of recording a second process after it.
+#[tokio::test]
+async fn traced_run_does_not_restart_a_server_killed_by_discovery() {
+    let scratch = ScratchDir::new("traced-no-restart");
+    let config = Config::new(
+        server_exiting_on_unknown_method(None),
+        ScenarioConfig::new("sustained", json!({ "tool": "echo" })),
+    );
+    let scenario = Box::new(Sustained {
+        concurrent: 1,
+        duration: Duration::from_millis(100),
+        tool: "echo".to_string(),
+        args: json!({}),
+    });
+    let trace = scratch.path().join("trace.jsonl");
+
+    let error = Run::new(config, scenario, scratch.path())
+        .with_trace(trace)
+        .execute()
+        .await
+        .expect_err("a traced run must not restart the server");
+    assert!(
+        matches!(error, RunError::Session(SessionError::Transport(_))),
+        "unexpected error: {error:?}"
+    );
+}

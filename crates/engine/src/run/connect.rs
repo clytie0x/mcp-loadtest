@@ -579,6 +579,18 @@ pub(super) async fn build_session(
                 Err(RunError::Session(SessionError::Transport(TransportError::Closed)))
                     if auto_negotiate =>
                 {
+                    // The trace already holds the unanswered probe; frames
+                    // from a second process would make it unreplayable.
+                    if trace.is_some() {
+                        tracing::warn!(
+                            "server closed the connection on the `server/discover` probe; a \
+                             traced run does not restart it. Set `protocol_version` to the \
+                             revision it speaks (e.g. \"2025-11-25\") to record it"
+                        );
+                        return Err(RunError::Session(SessionError::Transport(
+                            TransportError::Closed,
+                        )));
+                    }
                     warn_discovery_respawn();
                     connect_session_before_deadline(
                         spawn().await?,
