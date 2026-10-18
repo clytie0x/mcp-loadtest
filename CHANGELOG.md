@@ -7,12 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `lost_update` also checks the control write in the final read. If it is
+  missing, the store dropped data it already held (for example, a writer
+  that read a truncated file), and it counts as a lost update with its own
+  note. mcp-knowledge-graph 1.3.2 lost its control write on every run.
+
 ### Added
 
 - `serve --mcp` returns `instructions` at initialize: which tool answers
   which question, the order to call them in, and that run tools make real
   calls. MCP clients pass these to the model. The README shows how to
   register the server with an agent.
+- `serve --mcp` tools can target a remote server: pass `server_url` (with
+  optional `transport`, `allowed_hosts`, and `headers_from_env`) instead of
+  `server_command`. Remote targets go through the same SSRF guard, header,
+  and OAuth handling as a config file. `lost_update` over HTTP is the
+  natural case, with one server process and many sessions sharing its
+  memory. The library gains `run::open_session` to open one session the way
+  a run does.
 - `serve --mcp` tools that spawn the target accept `env`, `working_dir`, and
   `startup_timeout_ms`. An agent can now probe servers that read their
   configuration from the environment (a data file path, an API key) and

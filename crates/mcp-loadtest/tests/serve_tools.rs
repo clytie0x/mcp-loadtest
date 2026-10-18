@@ -233,19 +233,146 @@ async fn env_and_working_dir_reach_every_server_process() {
 }
 
 #[test]
-fn every_spawning_tool_advertises_the_stdio_target_settings() {
+fn every_target_tool_advertises_both_target_kinds() {
     for def in mcp_loadtest::serve::tools::tool_defs() {
-        let properties = &def["inputSchema"]["properties"];
-        let spawns = properties.get("server_command").is_some();
-        for key in ["env", "working_dir", "startup_timeout_ms"] {
+        let schema = &def["inputSchema"];
+        let properties = &schema["properties"];
+        let takes_target = properties.get("server_command").is_some();
+        for key in [
+            "server_url",
+            "transport",
+            "allowed_hosts",
+            "headers_from_env",
+            "env",
+            "working_dir",
+            "startup_timeout_ms",
+        ] {
             assert_eq!(
                 properties.get(key).is_some(),
-                spawns,
+                takes_target,
                 "{}: {key}",
                 def["name"]
             );
         }
+        let required = schema["required"].to_string();
+        assert!(!required.contains("server_command"), "{}", def["name"]);
     }
+}
+
+/// The stdlib streamable-HTTP mock on an OS-assigned loopback port, killed
+/// on drop.
+struct HttpMock {
+    child: std::process::Child,
+    url: String,
+}
+
+impl HttpMock {
+    fn start() -> Self {
+        Self::start_with(&[])
+    }
+
+    fn start_with(extra: &[&str]) -> Self {
+        use std::io::{BufRead, BufReader};
+        let python = std::env::var("MCP_LOADTEST_PYTHON").unwrap_or_else(|_| "python".to_string());
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../engine/tests/fixtures/mock-http-server.py");
+        let mut child = std::process::Command::new(python)
+            .arg(script)
+            .args(["--port", "0"])
+            .args(extra)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn mock-http-server.py");
+        let stdout = child.stdout.take().expect("mock stdout");
+        let mut line = String::new();
+        BufReader::new(stdout)
+            .read_line(&mut line)
+            .expect("read LISTENING line");
+        let addr = line
+            .trim()
+            .strip_prefix("LISTENING: ")
+            .unwrap_or_else(|| panic!("unexpected mock output: {line:?}"))
+            .to_owned();
+        Self {
+            child,
+            url: format!("http://{addr}/"),
+        }
+    }
+}
+
+impl Drop for HttpMock {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[tokio::test]
+async fn remote_targets_list_tools_and_run_detectors() {
+    let mock = HttpMock::start();
+    let scratch = Scratch::new("remote");
+
+    let listed = dispatch(
+        "list_target_tools",
+        &json!({ "server_url": mock.url, "allowed_hosts": ["127.0.0.1"] }),
+    )
+    .await
+    .expect("list_target_tools");
+    assert_eq!(listed["tool_count"], 1, "{listed:#}");
+    assert_eq!(listed["tools"][0]["name"], "echo", "{listed:#}");
+
+    let raced = dispatch(
+        "race_check",
+        &json!({
+            "server_url": mock.url,
+            "allowed_hosts": ["127.0.0.1"],
+            "tool": "echo",
+            "concurrent": 4,
+            "args": { "x": 1 },
+            "report_dir": scratch.0.join("runs").display().to_string(),
+        }),
+    )
+    .await
+    .expect("race_check");
+    assert_verdict(&raced, true);
+    assert_eq!(raced["successful_calls"], 4, "{raced:#}");
+}
+
+#[tokio::test]
+async fn lost_update_over_http_separates_racy_from_safe_stores() {
+    let scratch = Scratch::new("remote-lost-update");
+    let mut lost = Vec::new();
+    for mode in ["racy", "safe"] {
+        let mock = HttpMock::start_with(&["--store", mode]);
+        let result = dispatch(
+            "lost_update",
+            &json!({
+                "server_url": mock.url,
+                "allowed_hosts": ["127.0.0.1"],
+                "write_tool": "append",
+                "write_args": { "item": "{marker}" },
+                "read_tool": "read",
+                "concurrent": 6,
+                "writes_per_worker": 4,
+                "report_dir": scratch.0.join(mode).display().to_string(),
+            }),
+        )
+        .await
+        .expect("lost_update");
+        assert_verdict(&result, mode == "safe");
+        lost.push(result["lost_update_count"].as_u64().unwrap_or(u64::MAX));
+    }
+    assert!(lost[0] > 0, "racy store must lose writes: {lost:?}");
+    assert_eq!(lost[1], 0, "safe store must keep every write: {lost:?}");
+}
+
+#[tokio::test]
+async fn loopback_url_is_blocked_unless_allowed() {
+    let mock = HttpMock::start();
+    let err = dispatch("list_target_tools", &json!({ "server_url": mock.url }))
+        .await
+        .expect_err("loopback must be blocked without allowed_hosts");
+    assert!(err.to_string().contains("blocked host"), "{err}");
 }
 
 #[tokio::test]
@@ -295,6 +422,23 @@ async fn run_tools_reject_bad_arguments_before_spawning() {
         (
             "list_target_tools",
             json!({ "server_command": "python x.py", "startup_timeout_ms": 0 }),
+        ),
+        (
+            "list_target_tools",
+            json!({ "server_command": "python x.py", "server_url": "https://example.com/mcp" }),
+        ),
+        ("list_target_tools", json!({})),
+        (
+            "race_check",
+            json!({ "server_url": "https://example.com/mcp", "tool": "echo", "env": { "A": "1" } }),
+        ),
+        (
+            "race_check",
+            json!({ "server_url": "https://example.com/mcp", "tool": "echo", "transport": "ws" }),
+        ),
+        (
+            "list_target_tools",
+            json!({ "server_url": "https://example.com/mcp", "allowed_hosts": ["https://example.com"] }),
         ),
     ] {
         let err = dispatch(tool, &args)

@@ -10,8 +10,9 @@
 //! 2. `concurrent` independent sessions, released through the pool's start
 //!    gate, each send `writes_per_worker` writes. `{marker}`, `{worker}` and
 //!    `{seq}` inside string values of `write_args` are substituted per call.
-//! 3. One read on the run session. Every marker whose write was acknowledged
-//!    must appear in it; each missing one counts as a lost update.
+//! 3. One read on the run session. Every marker whose write was acknowledged,
+//!    the control's included, must appear in it; each missing one counts as a
+//!    lost update.
 //!
 //! Because step 1 already proved that state is shared, a final read that
 //! shows none of the acknowledged markers (for example, a store corrupted by
@@ -212,7 +213,18 @@ impl Scenario for LostUpdate {
             .iter()
             .filter(|mark| !contains(&read, mark))
             .collect();
-        outcome.lost_update_count = missing.len() as u64;
+        // The control write was acknowledged and read back before any
+        // concurrent write, so losing it now means the store dropped data it
+        // already held (for example, a writer that read a truncated file).
+        let control_lost = !contains(&read, &control);
+        outcome.lost_update_count = missing.len() as u64 + u64::from(control_lost);
+        if control_lost {
+            outcome.notes.push(format!(
+                "lost update: the control write `{control}`, read back before the concurrent \
+                 writes began, is missing from `{}`; the store dropped data it already held",
+                self.read_tool
+            ));
+        }
         if !missing.is_empty() {
             let preview: Vec<&str> = missing.iter().take(5).map(|m| m.as_str()).collect();
             outcome.notes.push(format!(
