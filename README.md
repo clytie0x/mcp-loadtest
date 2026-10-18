@@ -149,6 +149,38 @@ evaluated. See the complete
 [CI integration guide](docs/examples/ci-integration.md) for reports,
 thresholds, and baseline gating.
 
+## Use it from an agent
+
+`mcp-loadtest serve --mcp` is itself an MCP server. Register it with your
+agent once, then ask it to probe another server. In Claude Code:
+
+```bash
+claude mcp add mcp-loadtest -- mcp-loadtest serve --mcp
+```
+
+For clients configured with an `mcpServers` JSON file:
+
+```json
+{
+  "mcpServers": {
+    "mcp-loadtest": { "command": "mcp-loadtest", "args": ["serve", "--mcp"] }
+  }
+}
+```
+
+Then ask, for example: "Use mcp-loadtest to check `python -m my_mcp` for
+deadlocks and lost updates." The server tells the agent which tool answers
+which question and in what order to call them. A typical session calls
+`list_target_tools`, then `cold_start`, `deadlock_probe`, `race_check`, and
+`lost_update`, and branches on each result's `passed` and
+`failure_reasons`. Targets are a stdio command (`server_command`) or a
+remote endpoint (`server_url`). See
+[docs/examples/lost-update.md](docs/examples/lost-update.md#from-an-agent)
+for a full call.
+
+Run tools start real server processes and make real tool calls. Point them
+at servers and data the agent may exercise.
+
 ## What it covers
 
 - **Correctness under concurrency** — synchronized deadlock and race probes

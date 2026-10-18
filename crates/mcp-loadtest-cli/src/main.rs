@@ -174,8 +174,8 @@ pub(crate) enum Cmd {
     /// Expose mcp-loadtest itself AS an MCP server over stdio.
     ///
     /// Lets AI agents (Claude Code, Cursor, ...) probe servers by calling
-    /// `list_target_tools`, `deadlock_probe`, `race_check`, `cold_start`,
-    /// `sustained_load`, and `compare_runs`. See DESIGN §21.2.
+    /// `list_target_tools`, `deadlock_probe`, `race_check`, `lost_update`,
+    /// `cold_start`, `sustained_load`, and `compare_runs`. See DESIGN §21.2.
     Serve {
         /// Speak the MCP protocol over stdio. Default and currently the only
         /// supported variant — HTTP/SSE serve modes are deferred.

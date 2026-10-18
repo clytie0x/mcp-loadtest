@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `serve --mcp` returns `instructions` at initialize: which tool answers
+  which question, the order to call them in, and that run tools make real
+  calls. MCP clients pass these to the model. The README shows how to
+  register the server with an agent.
 - `serve --mcp` tools that spawn the target accept `env`, `working_dir`, and
   `startup_timeout_ms`. An agent can now probe servers that read their
   configuration from the environment (a data file path, an API key) and
