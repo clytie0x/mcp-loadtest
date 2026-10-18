@@ -168,3 +168,52 @@ async fn strict_run_gates_on_unknown_version() {
         other => panic!("expected UnsupportedProtocolVersion, got: {other:?}"),
     }
 }
+
+/// A stdio server that ends its process on any request it does not know,
+/// as servers built on older Python MCP SDKs do with `server/discover`.
+fn server_exiting_on_unknown_method(protocol_version: Option<&str>) -> ServerConfig {
+    let mock = helpers::fixture_path("mock-normal.py");
+    let mut server = ServerConfig::stdio(
+        helpers::python(),
+        vec![
+            mock.to_string_lossy().into_owned(),
+            "--exit-on-unknown-method".into(),
+        ],
+    );
+    server.protocol_version = protocol_version.map(str::to_owned);
+    server
+}
+
+#[tokio::test]
+async fn auto_reconnects_with_legacy_handshake_when_discovery_ends_the_server() {
+    let mut session =
+        mcp_loadtest_engine::run::open_session(&server_exiting_on_unknown_method(None))
+            .await
+            .expect("auto mode must reach a server that exits on server/discover");
+    let negotiated = session.negotiated_version();
+    assert!(
+        negotiated.is_some_and(|version| !version.is_stateless()),
+        "expected a legacy handshake, negotiated {negotiated:?}"
+    );
+    let tools = session
+        .list_tools()
+        .await
+        .expect("tools/list after fallback");
+    assert!(tools.iter().any(|tool| tool.name == "echo"));
+    session.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn pinned_stateless_version_does_not_fall_back() {
+    let Err(error) = mcp_loadtest_engine::run::open_session(&server_exiting_on_unknown_method(
+        Some("2026-07-28"),
+    ))
+    .await
+    else {
+        panic!("an explicit 2026-07-28 pin must never fall back to initialize");
+    };
+    assert!(
+        matches!(error, RunError::Session(SessionError::Transport(_))),
+        "unexpected error: {error:?}"
+    );
+}
