@@ -44,22 +44,15 @@ fn schema_advertises_every_runtime_scenario_and_v02_block() {
         BTreeSet::from([
             "cold_start",
             "deadlock_probe",
-            "fuzzer",
+            "lost_update",
             "pattern",
             "race_check",
-            "ramp",
-            "soak",
-            "spike",
             "sustained",
             "version_matrix",
         ])
     );
     assert_eq!(
         definitions["auth"]["properties"]["max_step_up_retries"]["maximum"],
-        3
-    );
-    assert_eq!(
-        definitions["historyOutput"]["properties"]["min_samples"]["default"],
         3
     );
 }
@@ -92,23 +85,9 @@ args = { message = "hello" }
 [output]
 formats = ["junit", "prometheus"]
 
-[output.history]
-series = "main-sustained"
-directory = "./runs/history"
-window = 10
-min_samples = 3
-require_history = false
-max_p99_regression_pct = 10.0
-max_error_rate_regression_pp = 0.5
-max_rps_drop_pct = 10.0
-deadlock_zero_tolerance = true
 "#,
     )
     .expect("schema-documented v0.2 config must parse and validate");
 
     assert_eq!(config.output.formats, ["junit", "prometheus"]);
-    assert_eq!(
-        config.output.history.as_ref().expect("history").series,
-        "main-sustained"
-    );
 }

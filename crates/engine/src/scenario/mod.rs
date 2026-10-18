@@ -18,15 +18,12 @@ use mcp_loadtest_protocol::transport::TransportError;
 
 pub mod cold_start;
 pub mod deadlock_probe;
-pub mod fuzzer;
+pub mod lost_update;
 pub mod pattern;
 // Not a scenario: internal session-pool driver shared by pooled scenarios
-// (`sustained` today; ramp/spike next). See ADR 0017.
+// See ADR 0017.
 pub(crate) mod pool;
 pub mod race_check;
-pub mod ramp;
-pub mod soak;
-pub mod spike;
 pub mod sustained;
 pub(crate) mod teardown;
 pub mod version_matrix;
@@ -38,6 +35,9 @@ pub mod version_matrix;
 ///
 /// Do not modify this trait signature without a CHANGELOG entry: every
 /// scenario and external `impl Scenario` depends on it.
+// async_trait marks each boxed-future method #[must_use]; Rust 1.99 clippy
+// flags that as double_must_use.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Scenario: Send + Sync {
     /// Drive the scenario until completion or until `ctx.cancel_token` fires.
@@ -127,7 +127,7 @@ impl RunContext {
 pub use mcp_loadtest_core::outcome::ScenarioOutcome;
 
 /// Map a [`SessionError`] to the [`CallOutcome`] bucket used by the metrics
-/// recorder. Shared by `pattern`, `ramp`, and `soak` — when a new error case
+/// recorder. Shared by the scenarios — when a new error case
 /// is added to `SessionError` it must be added here exactly once.
 pub(crate) fn classify_error(err: &SessionError) -> CallOutcome {
     use SessionError as E;

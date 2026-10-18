@@ -2,8 +2,7 @@
 //!
 //! Detects deadlocks, hangs, and perf regressions that unit tests miss.
 //!
-//! Drives an MCP server under concurrent / ramp / soak / spike / pattern
-//! load and surfaces the failure classes unit tests miss — lazy-init
+//! Drives an MCP server under concurrent / cold-start / pattern load and surfaces the failure classes unit tests miss — lazy-init
 //! **deadlocks**, non-determinism **races**, **hangs**, memory leaks, and
 //! latency / throughput **regressions** — resolving every run to a
 //! CI-gating pass/fail plus machine-readable reports. Strict MCP-schema
@@ -56,12 +55,11 @@
 //! # }
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/mcp-loadtest/0.2.0")]
+#![doc(html_root_url = "https://docs.rs/mcp-loadtest/0.3.0")]
 
 pub mod analysis;
 pub mod config;
 pub mod hang_detector;
-pub use mcp_loadtest_output::history;
 pub mod metrics;
 pub mod protocol;
 pub mod report;
@@ -76,13 +74,6 @@ pub mod trace;
 /// pay for the dependency. See [ADR 0005](../../docs/adr/0005-serve-mcp-mode.md).
 #[cfg(feature = "serve")]
 pub mod serve;
-
-/// Live-polling Ratatui dashboard for the CLI's `--watch` modes.
-///
-/// Gated behind the `tui` cargo feature — only the CLI binary needs it.
-/// Lives in `mcp-loadtest-output`.
-#[cfg(feature = "tui")]
-pub use mcp_loadtest_output::tui;
 
 pub use config::{
     Config, ConfigError, OutputConfig, ScenarioConfig, ServerConfig, ThresholdsConfig,

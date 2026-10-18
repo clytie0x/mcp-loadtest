@@ -29,12 +29,27 @@ use tokio::runtime::Runtime;
 /// Build a fresh `Session` wired to a loopback transport. The `initialize`
 /// handshake runs once during construction; the bench then drives
 /// `call_tool` repeatedly against the same `LoopbackTransport`.
-fn build_session(rt: &Runtime) -> Session {
+fn build_session(rt: &Runtime, result: String) -> Session {
     rt.block_on(async {
-        Session::from_transport(LoopbackTransport { handshook: false })
-            .await
-            .expect("loopback initialize must succeed")
+        Session::from_transport(LoopbackTransport {
+            handshook: false,
+            result,
+        })
+        .await
+        .expect("loopback initialize must succeed")
     })
+}
+
+/// `tools/call` result member for the tiny/medium-args benches.
+const EMPTY_RESULT: &str = r#""result":{"content":[],"isError":false}"#;
+
+/// A `tools/call` result member with one text item of about `bytes` bytes,
+/// mixing ASCII and multi-byte UTF-8 the way real tool output does.
+fn text_result(bytes: usize) -> String {
+    let unit = "price ราคา 450.5 ";
+    let text = unit.repeat(bytes / unit.len() + 1);
+    let item = json!({ "type": "text", "text": text });
+    format!(r#""result":{{"content":[{item}],"isError":false}}"#)
 }
 
 /// Two-phase loopback. First inbound request (the `initialize` call issued
@@ -43,6 +58,8 @@ fn build_session(rt: &Runtime) -> Session {
 /// `call_tool` benches see a tight serialize→parse loop with no I/O wait.
 struct LoopbackTransport {
     handshook: bool,
+    /// Pre-rendered `"result":{...}` member for every `tools/call` reply.
+    result: String,
 }
 
 #[async_trait]
@@ -60,7 +77,8 @@ impl Transport for LoopbackTransport {
         } else {
             // Subsequent calls — used by `call_tool` benches.
             Ok(format!(
-                "{{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":{{\"content\":[],\"isError\":false}}}}"
+                "{{\"jsonrpc\":\"2.0\",\"id\":{id},{}}}",
+                self.result
             ))
         }
     }
@@ -79,7 +97,7 @@ fn bench_call_tool_tiny_args(c: &mut Criterion) {
         .enable_all()
         .build()
         .expect("current_thread runtime must build");
-    let mut session = build_session(&rt);
+    let mut session = build_session(&rt, EMPTY_RESULT.to_owned());
     let args = json!({ "x": 1 });
 
     c.bench_function("call_tool_tiny_args", |b| {
@@ -100,7 +118,7 @@ fn bench_call_tool_medium_args(c: &mut Criterion) {
         .enable_all()
         .build()
         .expect("current_thread runtime must build");
-    let mut session = build_session(&rt);
+    let mut session = build_session(&rt, EMPTY_RESULT.to_owned());
     let args = json!({
         "ticker": "AAPL",
         "strike": 460,
@@ -121,9 +139,33 @@ fn bench_call_tool_medium_args(c: &mut Criterion) {
     });
 }
 
+fn bench_call_tool_text_result(c: &mut Criterion) {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("current_thread runtime must build");
+    let args = json!({ "x": 1 });
+
+    for kib in [1, 16] {
+        let mut session = build_session(&rt, text_result(kib * 1024));
+        c.bench_function(&format!("call_tool_text_result_{kib}k"), |b| {
+            b.iter(|| {
+                rt.block_on(async {
+                    let res = session
+                        .call_tool(black_box("read"), black_box(&args))
+                        .await
+                        .expect("loopback call_tool must succeed");
+                    black_box(res);
+                });
+            });
+        });
+    }
+}
+
 criterion_group!(
     benches,
     bench_call_tool_tiny_args,
-    bench_call_tool_medium_args
+    bench_call_tool_medium_args,
+    bench_call_tool_text_result
 );
 criterion_main!(benches);

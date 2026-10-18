@@ -6,7 +6,6 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 use serde::Deserialize;
-use url::Url;
 
 use crate::discovery::{AuthorizationServerMetadata, bounded_body};
 use crate::pkce::CompletedAuthorization;
@@ -130,7 +129,7 @@ impl TokenClient {
             ("code", completed.code.expose().to_owned()),
             ("redirect_uri", completed.redirect_uri.as_str().to_owned()),
             ("code_verifier", completed.verifier.expose().to_owned()),
-            ("resource", completed.resource.as_str().to_owned()),
+            ("resource", completed.resource.clone()),
         ];
         self.exchange(
             metadata,
@@ -146,7 +145,7 @@ impl TokenClient {
         &self,
         metadata: &AuthorizationServerMetadata,
         registration: &ClientRegistration,
-        resource: &Url,
+        resource: &str,
         scopes: ScopeSet,
     ) -> AuthResult<TokenSet> {
         if !metadata.grant_types_supported.is_empty()
@@ -161,7 +160,7 @@ impl TokenClient {
         }
         let mut fields = vec![
             ("grant_type", "client_credentials".to_owned()),
-            ("resource", resource.as_str().to_owned()),
+            ("resource", resource.to_owned()),
         ];
         if !scopes.is_empty() {
             fields.push(("scope", scopes.to_oauth_string()));
@@ -174,7 +173,7 @@ impl TokenClient {
         &self,
         metadata: &AuthorizationServerMetadata,
         registration: &ClientRegistration,
-        resource: &Url,
+        resource: &str,
         previous: &TokenSet,
     ) -> AuthResult<TokenSet> {
         let refresh_token = previous
@@ -184,7 +183,7 @@ impl TokenClient {
         let mut fields = vec![
             ("grant_type", "refresh_token".to_owned()),
             ("refresh_token", refresh_token.expose().to_owned()),
-            ("resource", resource.as_str().to_owned()),
+            ("resource", resource.to_owned()),
         ];
         if !previous.scopes.is_empty() {
             fields.push(("scope", previous.scopes.to_oauth_string()));

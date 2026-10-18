@@ -273,8 +273,8 @@ fn bytes_to_mib(bytes: u64) -> f64 {
 
 /// Default sample interval recommended for production runs.
 ///
-/// 500ms is a good balance: fine enough to catch sub-second RSS spikes
-/// during `spike` scenarios, coarse enough to keep sysinfo overhead well
+/// 500ms is a good balance: fine enough to catch sub-second RSS spikes,
+/// coarse enough to keep sysinfo overhead well
 /// under 1% CPU on a 4-core laptop.
 pub(crate) const DEFAULT_SAMPLE_INTERVAL: Duration = Duration::from_millis(500);
 

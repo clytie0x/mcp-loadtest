@@ -63,7 +63,7 @@ jobs:
           asset_root="${RUNNER_TEMP}/action-contract-assets"
           package_root="${RUNNER_TEMP}/action-contract-package"
           shim_root="${RUNNER_TEMP}/action-contract-shims"
-          package_name="mcp-loadtest-v0.2.0-x86_64-unknown-linux-gnu"
+          package_name="mcp-loadtest-v0.3.0-x86_64-unknown-linux-gnu"
           asset_name="${package_name}.tar.gz"
           mkdir -p \
             "${asset_root}" \
@@ -82,7 +82,7 @@ jobs:
           command_name="${1-}"
 
           case "${command_name}" in
-            deadlock-probe|run|cross|doctor)
+            deadlock-probe|run|doctor)
               case " $* " in
                 *" --action-redact-server-identity "*) ;;
                 *) echo "missing Action redaction flag" >&2; exit 65 ;;
@@ -116,7 +116,7 @@ jobs:
           PY
 
           case "${command_name}" in
-            deadlock-probe|run|cross)
+            deadlock-probe|run)
               shift
               output_dir=""
               while [ "$#" -gt 0 ]; do
@@ -453,41 +453,6 @@ jobs:
             "${CAPTURE_ROOT}.run.json"
           then
             echo "run output leaked the config server sentinel" >&2
-            exit 1
-          fi
-
-      - name: Exercise redacted cross output
-        id: redacted_cross
-        uses: ./
-        env:
-          MCP_LOADTEST_FIXTURE_CAPTURE: ${{ runner.temp }}/action-cross
-          MCP_LOADTEST_FIXTURE_RUN_ID: 01J00000000000000000000006
-        with:
-          command: cross
-          server: python -m fake_server --token ACTION_SERVER_SECRET_7F3B
-          working-directory: .action-contract/success
-
-      - name: Verify cross output omits server identity
-        shell: bash
-        env:
-          ACTION_PASSED: ${{ steps.redacted_cross.outputs.passed }}
-          ACTION_REPORT_DIR: ${{ steps.redacted_cross.outputs.report-dir }}
-          CAPTURE_ROOT: ${{ runner.temp }}/action-cross
-          SECRET_SENTINEL: ACTION_SERVER_SECRET_7F3B
-        run: |
-          set -euo pipefail
-          [ "${ACTION_PASSED}" = "true" ]
-          case "${ACTION_REPORT_DIR}" in
-            "${RUNNER_TEMP}"/mcp-loadtest-action-runs.*) ;;
-            *) echo "unexpected cross report root: ${ACTION_REPORT_DIR}" >&2; exit 1 ;;
-          esac
-          test -f \
-            "${ACTION_REPORT_DIR}/01J00000000000000000000006/metrics.json"
-          if grep -R -F "${SECRET_SENTINEL}" \
-            "${ACTION_REPORT_DIR}" \
-            "${CAPTURE_ROOT}.cross.json"
-          then
-            echo "cross output leaked the server sentinel" >&2
             exit 1
           fi
 

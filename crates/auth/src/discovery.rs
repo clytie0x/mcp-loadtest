@@ -75,7 +75,9 @@ impl AuthorizationServerMetadata {
 /// Fully discovered authorization context for one exact MCP resource.
 #[derive(Debug, Clone)]
 pub struct AuthorizationContext {
-    /// Canonical resource URI included in authorization and token requests.
+    /// Parsed protected-resource URI, used for policy and origin checks. Send
+    /// [`AuthorizationContext::resource_identifier`] on the wire instead:
+    /// parsing appends "/" to a pathless identifier.
     pub resource: Url,
     /// Protected-resource metadata.
     pub protected_resource: ProtectedResourceMetadata,
@@ -84,6 +86,13 @@ pub struct AuthorizationContext {
 }
 
 impl AuthorizationContext {
+    /// The resource identifier exactly as the protected-resource metadata
+    /// publishes it. RFC 8707 `resource` parameters and token bindings must
+    /// use this string, not a re-serialized [`Url`].
+    pub fn resource_identifier(&self) -> &str {
+        &self.protected_resource.resource
+    }
+
     /// Select initial scopes according to MCP precedence: challenge scope,
     /// then protected-resource metadata, otherwise omit the scope parameter.
     /// `offline_access` is added only when the authorization server advertises it.

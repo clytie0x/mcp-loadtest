@@ -3,7 +3,7 @@
 //! The `cmd_run` refactor split the module into private submodules
 //! (`builder` / `params` / `patterns`). This guards the two public items
 //! `main.rs` depends on across the bin↔lib boundary: the re-exported
-//! [`cmd_run::parse_dur_str`] helper (shared with `deadlock-probe` / `cross`)
+//! [`cmd_run::parse_dur_str`] helper (shared with `deadlock-probe`)
 //! and the [`cmd_run::run_from_config`] entry point. The Action-only
 //! [`cmd_run::run_from_config_with_output`] path is exercised end-to-end in
 //! `run_strict.rs`.

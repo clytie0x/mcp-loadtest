@@ -1,28 +1,46 @@
 //! Tool registry + dispatch for the self-hosted MCP server.
 //!
-//! Each tool lives in its own submodule (`deadlock_probe`, `sustained_load`,
-//! `compare_runs`) and exposes a `*_def()` constructor + a handler async fn
-//! via `pub(super)`. This file keeps the small public surface — `ToolError`,
-//! `ToolDef`, `tool_defs`, `dispatch` — plus the helpers shared across tools.
+//! Each tool lives in its own submodule and exposes a `*_def()` constructor +
+//! a handler async fn via `pub(super)`. This file keeps the small public
+//! surface — `ToolError`, `ToolDef`, `tool_defs`, `dispatch` — plus the
+//! helpers shared across tools.
 //!
-//! See DESIGN.md §21.2 for the motivation. M7 ships three tools:
+//! See DESIGN.md §21.2 for the motivation. The tools, in the order an agent
+//! typically calls them:
 //!
-//! 1. `deadlock_probe` — wraps [`crate::scenario::deadlock_probe::DeadlockProbe`].
-//! 2. `sustained_load` — wraps [`crate::scenario::sustained::Sustained`].
-//! 3. `compare_runs`   — reads two `metrics.json` files and diffs them.
+//! 1. `list_target_tools` — the target's `tools/list`, so the agent knows what
+//!    to probe.
+//! 2. `deadlock_probe` — wraps [`crate::scenario::deadlock_probe::DeadlockProbe`].
+//! 3. `race_check`     — wraps [`crate::scenario::race_check::RaceCheck`].
+//! 4. `lost_update`    — wraps [`crate::scenario::lost_update::LostUpdate`].
+//! 5. `cold_start`     — wraps [`crate::scenario::cold_start::ColdStart`].
+//! 6. `sustained_load` — wraps [`crate::scenario::sustained::Sustained`].
+//! 7. `compare_runs`   — reads two `metrics.json` files and diffs them.
 //!
-//! Handlers return `Result<Value, ToolError>`; the caller (in `mod.rs`) maps
-//! errors to JSON-RPC error objects.
+//! Every run tool returns the same verdict fields (built by `verdict`) so an
+//! agent can branch on `passed` and read `failure_reasons` without knowing
+//! which tool produced them. Handlers return `Result<Value, ToolError>`; the
+//! caller (in `mod.rs`) maps errors to JSON-RPC error objects.
 //!
 //! M7 ownership: Agent W. M8 split: per-tool files.
 
-use serde_json::Value;
+use std::path::PathBuf;
+use std::time::Duration;
+
+use serde_json::{Map, Value, json};
 use thiserror::Error;
 
-use crate::config;
+use crate::config::{self, Config, OutputConfig, ScenarioConfig, ServerConfig};
+use crate::report::{Report, failure_reasons};
+use crate::run::Run;
+use crate::scenario::Scenario;
 
+mod cold_start;
 mod compare_runs;
 mod deadlock_probe;
+mod list_target_tools;
+mod lost_update;
+mod race_check;
 mod sustained_load;
 
 /// Errors a tool handler can produce. The server transport translates these
@@ -53,17 +71,35 @@ pub struct ToolDef {
 /// Return the full registry as plain JSON values (the shape `tools/list`
 /// expects under `result.tools`).
 pub fn tool_defs() -> Vec<Value> {
-    vec![
+    let mut run_tools = vec![
         deadlock_probe::deadlock_probe_def(),
+        race_check::race_check_def(),
+        lost_update::lost_update_def(),
+        cold_start::cold_start_def(),
         sustained_load::sustained_load_def(),
-        compare_runs::compare_runs_def(),
-    ]
+    ];
+    for def in &mut run_tools {
+        def["inputSchema"]["properties"]["report_dir"] = json!({
+            "type": "string",
+            "default": DEFAULT_REPORT_DIR,
+            "description": "Directory for the run's artifacts (one subdirectory per run). \
+                            Relative paths resolve against the server's working directory."
+        });
+    }
+    let mut defs = vec![list_target_tools::list_target_tools_def()];
+    defs.extend(run_tools);
+    defs.push(compare_runs::compare_runs_def());
+    defs
 }
 
 /// Route a `tools/call` invocation to the right handler.
 pub async fn dispatch(name: &str, arguments: &Value) -> Result<Value, ToolError> {
     match name {
+        "list_target_tools" => list_target_tools::list_target_tools(arguments).await,
         "deadlock_probe" => deadlock_probe::deadlock_probe(arguments).await,
+        "race_check" => race_check::race_check(arguments).await,
+        "lost_update" => lost_update::lost_update(arguments).await,
+        "cold_start" => cold_start::cold_start(arguments).await,
         "sustained_load" => sustained_load::sustained_load(arguments).await,
         "compare_runs" => compare_runs::compare_runs(arguments).await,
         other => Err(ToolError::InvalidArgs(format!("unknown tool: {other}"))),
@@ -79,6 +115,121 @@ pub(super) fn required_str(args: &Value, key: &str) -> Result<String, ToolError>
         .ok_or_else(|| ToolError::InvalidArgs(format!("{key} (string) is required")))
 }
 
+/// Read an optional integer argument that must fit in `u32`, falling back to
+/// `default` when absent.
+pub(super) fn u32_arg(args: &Value, key: &str, default: u32) -> Result<u32, ToolError> {
+    match args.get(key) {
+        None => Ok(default),
+        Some(v) => v
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or_else(|| {
+                ToolError::InvalidArgs(format!("{key} must be an integer in 0..=u32::MAX"))
+            }),
+    }
+}
+
+/// The server and artifact location every run tool takes.
+pub(super) struct RunTarget {
+    server_command: String,
+    report_dir: PathBuf,
+}
+
+/// Read `server_command` (required) and `report_dir` (default `./runs`,
+/// relative to the server's working directory).
+pub(super) fn run_target(args: &Value) -> Result<RunTarget, ToolError> {
+    let report_dir = match args.get("report_dir") {
+        None => PathBuf::from(DEFAULT_REPORT_DIR),
+        Some(v) => match v.as_str() {
+            Some(dir) if !dir.trim().is_empty() => PathBuf::from(dir),
+            _ => {
+                return Err(ToolError::InvalidArgs(
+                    "report_dir must be a non-empty string".into(),
+                ));
+            }
+        },
+    };
+    Ok(RunTarget {
+        server_command: required_str(args, "server_command")?,
+        report_dir,
+    })
+}
+
+const DEFAULT_REPORT_DIR: &str = "./runs";
+
+/// Spawn the target over stdio and drive `scenario` to completion. `kind`
+/// is the scenario's config `type` string.
+pub(super) async fn run_stdio(
+    target: &RunTarget,
+    kind: &str,
+    scenario: Box<dyn Scenario>,
+) -> Result<Report, ToolError> {
+    let (command, cmd_args) = split_server_command(&target.server_command)?;
+    // `Config`/`ScenarioConfig`/`OutputConfig` are `#[non_exhaustive]` and
+    // live in `mcp-loadtest-core` — build via the constructors + builders
+    // rather than an exhaustive struct literal (rejected across the crate
+    // boundary).
+    let config = Config::new(
+        ServerConfig::stdio(command, cmd_args),
+        ScenarioConfig::new(kind, json!({})),
+    )
+    .with_output(OutputConfig::new(target.report_dir.clone(), vec![]));
+    Run::new(config, scenario, target.report_dir.clone())
+        .execute()
+        .await
+        .map_err(|e| ToolError::Run(e.to_string()))
+}
+
+/// The verdict fields every run tool returns: `passed`, the reasons it
+/// failed (empty when it passed), the gates an agent may want to inspect,
+/// the scenario notes, and the `run_id` of the artifacts under `./runs`.
+pub(super) fn verdict(report: &Report, target: &RunTarget) -> Map<String, Value> {
+    let passed = report.passed();
+    let reasons = if passed {
+        Vec::new()
+    } else {
+        failure_reasons(report)
+    };
+    let mut out = Map::new();
+    out.insert("passed".into(), json!(passed));
+    out.insert("failure_reasons".into(), json!(reasons));
+    out.insert(
+        "total_calls".into(),
+        json!(report.scenario_outcome.total_calls),
+    );
+    out.insert(
+        "successful_calls".into(),
+        json!(report.scenario_outcome.successful_calls),
+    );
+    out.insert(
+        "error_count".into(),
+        json!(report.scenario_outcome.error_count),
+    );
+    out.insert(
+        "incomplete_worker_count".into(),
+        json!(report.scenario_outcome.incomplete_worker_count),
+    );
+    out.insert(
+        "teardown_failure_count".into(),
+        json!(report.scenario_outcome.teardown_failure_count),
+    );
+    out.insert(
+        "threshold_violation_count".into(),
+        json!(report.threshold_violations.len()),
+    );
+    out.insert("notes".into(), json!(report.scenario_outcome.notes));
+    out.insert("run_id".into(), json!(report.run_id));
+    out.insert(
+        "run_dir".into(),
+        json!(target.report_dir.join(&report.run_id).display().to_string()),
+    );
+    out
+}
+
+pub(super) fn duration_ms(d: Duration) -> f64 {
+    d.as_secs_f64() * 1000.0
+}
+
 /// Thin adapter around [`config::split_server_command`] that translates the
 /// `ConfigError` into a `ToolError::InvalidArgs` so the JSON-RPC error mapping
 /// stays right.
@@ -92,15 +243,37 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn tool_defs_contain_the_three_m7_tools() {
+    fn tool_defs_list_every_dispatchable_tool_with_a_schema() {
         let defs = tool_defs();
         let names: Vec<&str> = defs
             .iter()
             .filter_map(|d| d.get("name").and_then(Value::as_str))
             .collect();
-        assert!(names.contains(&"deadlock_probe"));
-        assert!(names.contains(&"sustained_load"));
-        assert!(names.contains(&"compare_runs"));
+        assert_eq!(
+            names,
+            [
+                "list_target_tools",
+                "deadlock_probe",
+                "race_check",
+                "lost_update",
+                "cold_start",
+                "sustained_load",
+                "compare_runs",
+            ]
+        );
+        for def in &defs {
+            assert_eq!(def["inputSchema"]["type"], "object", "{def}");
+            assert!(def["description"].is_string(), "{def}");
+        }
+    }
+
+    #[test]
+    fn u32_arg_defaults_and_rejects_out_of_range() {
+        assert_eq!(u32_arg(&json!({}), "n", 7).unwrap(), 7);
+        assert_eq!(u32_arg(&json!({"n": 3}), "n", 7).unwrap(), 3);
+        assert!(u32_arg(&json!({"n": -1}), "n", 7).is_err());
+        assert!(u32_arg(&json!({"n": u64::from(u32::MAX) + 1}), "n", 7).is_err());
+        assert!(u32_arg(&json!({"n": "3"}), "n", 7).is_err());
     }
 
     #[test]

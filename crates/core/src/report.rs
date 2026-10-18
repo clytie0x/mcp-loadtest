@@ -6,6 +6,7 @@
 //! reporter), Agent H (Run orchestrator that builds Report). Other agents
 //! consume via the LOCKED types below.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -46,6 +47,10 @@ pub struct Report {
     /// up (e.g. older runs deserialized from disk). M7 differentiator.
     #[serde(default)]
     pub coverage: Option<CoverageReport>,
+    /// Aggregates per tool name, as recorded through `Recorder::record_tool`.
+    /// `cold_start` records its handshake under `cold_start:handshake`.
+    #[serde(default)]
+    pub per_tool: BTreeMap<String, ScenarioMetrics>,
 }
 
 impl Report {
@@ -57,12 +62,12 @@ impl Report {
     /// - the scenario attempted no calls;
     /// - no attempted call produced a scenario-level success;
     /// - the scenario claimed more successes than attempts;
-    /// - a deadlock or response divergence was detected;
+    /// - a deadlock, response divergence, or lost update was detected;
     /// - any pooled worker failed to complete, so requested concurrency was
     ///   not actually exercised;
     /// - any session/transport teardown failed or exceeded its lifecycle
     ///   deadline;
-    /// - a race check, deadlock probe, or fuzzer produced any unexpected
+    /// - a race check, deadlock probe, or lost-update check produced any unexpected
     ///   error or breached the configured hang threshold (a diagnostic cohort
     ///   cannot be called healthy when one member errored or responded late);
     ///   or
@@ -91,7 +96,7 @@ impl Report {
         let diagnostic_complete =
             !matches!(
                 self.scenario_name.as_str(),
-                "race_check" | "deadlock_probe" | "fuzzer"
+                "race_check" | "deadlock_probe" | "lost_update"
             ) || (outcome.error_count == 0 && outcome.hang_count == 0 && recorded.hang == 0);
 
         self.threshold_violations.is_empty()
@@ -100,6 +105,7 @@ impl Report {
             && outcome.successful_calls <= outcome.total_calls
             && outcome.deadlock_count == 0
             && outcome.divergence_count == 0
+            && outcome.lost_update_count == 0
             && outcome.incomplete_worker_count == 0
             && outcome.teardown_failure_count == 0
             && diagnostic_complete
@@ -124,7 +130,7 @@ pub struct ServerInfo {
 ///
 /// **M3 Agent G** populated `peak_rss_mb` / `final_rss_mb` / `avg_cpu_pct`
 /// via `sysinfo`. **M6 Agent T** added the fd / thread peak + final pair
-/// to drive the soak-leak heuristic.
+/// to drive the leak heuristic.
 ///
 /// The fd fields are best-effort: on platforms where sysinfo can't see
 /// open file descriptors (Windows, sometimes macOS) they stay at `0`.
@@ -332,6 +338,7 @@ mod tests {
             trace_path: None,
             threshold_violations: Vec::new(),
             coverage: None,
+            per_tool: Default::default(),
         }
     }
 
@@ -420,7 +427,7 @@ mod tests {
 
     #[test]
     fn passed_rejects_mixed_success_and_slow_diagnostic_cohorts() {
-        for scenario_name in ["race_check", "deadlock_probe", "fuzzer"] {
+        for scenario_name in ["race_check", "deadlock_probe"] {
             let mut r = skeleton_report();
             r.scenario_name = scenario_name.into();
             r.scenario_outcome.total_calls = 2;
@@ -448,24 +455,6 @@ mod tests {
             r.passed(),
             "non-diagnostic load scenarios keep partial slow calls under configured threshold policy"
         );
-    }
-
-    #[test]
-    fn passed_accepts_expected_fuzzer_rejections_but_rejects_unexpected_errors() {
-        let mut r = skeleton_report();
-        r.scenario_name = "fuzzer".into();
-        r.scenario_outcome.total_calls = 2;
-        r.scenario_outcome.successful_calls = 2;
-        r.metrics.outcomes.expected_rejection = 2;
-        assert!(
-            r.passed(),
-            "expected server rejections are healthy fuzz probes"
-        );
-
-        r.scenario_outcome.total_calls = 3;
-        r.scenario_outcome.error_count = 1;
-        r.metrics.outcomes.server_error = 1;
-        assert!(!r.passed(), "unexpected fuzzer errors must fail closed");
     }
 
     #[test]

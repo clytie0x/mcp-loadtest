@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/Teerapat-Vatpitak/mcp-loadtest"
@@ -23,17 +23,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sysinfo = "0.32"
 async-trait = "0.1"
 console = "0.15"
-crossterm = "0.28"
 humantime = "2"
-ratatui = "0.29"
 humantime-serde = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
-tokio-stream = "0.1"
-tokio-tungstenite = { version = "0.27", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 url = "2"
 tokio-util = { version = "0.7", features = ["rt"] }
 toml = "0.8"
-indicatif = "0.17"
 ulid = "1"
 anyhow = "1"
 rand = "0.9"

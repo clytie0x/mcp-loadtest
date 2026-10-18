@@ -4,16 +4,13 @@
 //! scenario. Split out of `tools.rs` in M8 to keep per-tool files under the
 //! 300-LoC convention.
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use crate::config::{Config, OutputConfig, ScenarioConfig, ServerConfig};
-use crate::run::Run;
 use crate::scenario::deadlock_probe::DeadlockProbe;
 
-use super::{ToolError, required_str, split_server_command};
+use super::{ToolError, required_str, run_stdio, run_target, u32_arg, verdict};
 
 pub(super) fn deadlock_probe_def() -> Value {
     json!({
@@ -60,9 +57,9 @@ pub(super) fn deadlock_probe_def() -> Value {
 }
 
 pub(super) async fn deadlock_probe(args: &Value) -> Result<Value, ToolError> {
-    let server_command = required_str(args, "server_command")?;
+    let target = run_target(args)?;
     let tool = required_str(args, "tool")?;
-    let concurrent = args.get("concurrent").and_then(Value::as_u64).unwrap_or(5) as u32;
+    let concurrent = u32_arg(args, "concurrent", 5)?;
     let hang_threshold_ms = args
         .get("hang_threshold_ms")
         .and_then(Value::as_u64)
@@ -71,50 +68,34 @@ pub(super) async fn deadlock_probe(args: &Value) -> Result<Value, ToolError> {
         .get("grace_period_ms")
         .and_then(Value::as_u64)
         .unwrap_or(5_000);
-    let call_args = args.get("args").cloned().unwrap_or(json!({}));
-
-    let (command, cmd_args) = split_server_command(&server_command)?;
-
-    let server_cfg = ServerConfig::stdio(command, cmd_args);
     let scenario = DeadlockProbe {
         concurrent,
         hang_threshold: Duration::from_millis(hang_threshold_ms),
         grace_period: Duration::from_millis(grace_period_ms),
         tool,
-        args: call_args,
+        args: args.get("args").cloned().unwrap_or(json!({})),
     };
-    // `Config`/`ScenarioConfig`/`OutputConfig` are `#[non_exhaustive]` and
-    // now live in `mcp-loadtest-core` — build via the constructors + builders
-    // rather than an exhaustive struct literal (rejected across the crate
-    // boundary).
-    let config = Config::new(server_cfg, ScenarioConfig::new("deadlock_probe", json!({})))
-        .with_output(OutputConfig::new(PathBuf::from("./runs"), vec![]));
+    let report = run_stdio(&target, "deadlock_probe", Box::new(scenario)).await?;
 
-    let run = Run::new(config, Box::new(scenario), PathBuf::from("./runs"));
-    let report = run
-        .execute()
-        .await
-        .map_err(|e| ToolError::Run(e.to_string()))?;
-
+    let mut out = verdict(&report, &target);
+    out.insert(
+        "deadlock_count".into(),
+        json!(report.scenario_outcome.deadlock_count),
+    );
+    out.insert(
+        "hang_count".into(),
+        json!(report.scenario_outcome.hang_count),
+    );
     // Read the deadlock durations from the typed `ScenarioOutcome` field
-    // rather than re-parsing the human-readable notes. The note format is for
-    // humans and can change freely without silently emptying this output.
-    let hung_for_ms = report.scenario_outcome.hung_for_ms.clone();
-
-    Ok(json!({
-        "passed": report.passed(),
-        "deadlock_count": report.scenario_outcome.deadlock_count,
-        "hang_count": report.scenario_outcome.hang_count,
-        "successful_calls": report.scenario_outcome.successful_calls,
-        "total_calls": report.scenario_outcome.total_calls,
-        "error_count": report.scenario_outcome.error_count,
-        "incomplete_worker_count": report.scenario_outcome.incomplete_worker_count,
-        "teardown_failure_count": report.scenario_outcome.teardown_failure_count,
-        "threshold_violation_count": report.threshold_violations.len(),
-        "hung_for_ms": hung_for_ms,
-        "scenario_outcome": {
-            "notes": report.scenario_outcome.notes,
-        },
-        "run_id": report.run_id,
-    }))
+    // rather than re-parsing the human-readable notes.
+    out.insert(
+        "hung_for_ms".into(),
+        json!(report.scenario_outcome.hung_for_ms),
+    );
+    // Kept for callers of the pre-v0.3.0 shape; `notes` is the same list.
+    out.insert(
+        "scenario_outcome".into(),
+        json!({ "notes": report.scenario_outcome.notes }),
+    );
+    Ok(Value::Object(out))
 }

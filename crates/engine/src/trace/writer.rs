@@ -293,15 +293,6 @@ impl<T: Transport> Transport for TracingTransport<T> {
         self.inner.notify(body).await
     }
 
-    async fn raw_send(&mut self, bytes: &[u8]) -> Result<(), TransportError> {
-        // Delegated so a wrapped transport's override (stdio) still fires.
-        // Deliberately NOT recorded: raw fuzzer payloads may be invalid
-        // UTF-8 / non-JSON, and a lossy conversion would poison replay
-        // (first-class raw frames are an additive mcp-trace/1 extension —
-        // ADR 0021 §2).
-        self.inner.raw_send(bytes).await
-    }
-
     fn pid(&self) -> Option<u32> {
         self.inner.pid()
     }

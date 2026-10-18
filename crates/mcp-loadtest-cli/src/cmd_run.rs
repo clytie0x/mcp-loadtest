@@ -4,7 +4,7 @@
 //! Split into focused submodules (kept private; the public surface is the
 //! [`run_from_config`] entry, its private-Action output override
 //! [`run_from_config_with_output`], plus the re-exported [`parse_dur_str`]
-//! helper `main.rs` shares with the `deadlock-probe` / `cross` subcommands):
+//! helper `main.rs` shares with the `deadlock-probe` subcommand):
 //! - `builder` — scenario `kind` → `Box<dyn Scenario>` dispatch
 //! - `params` — generic TOML param plucking + duration parsing
 //! - `patterns` — weighted multi-step pattern-config parsing
@@ -14,14 +14,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use mcp_loadtest::StderrCapture;
-use mcp_loadtest::analysis::regression::RegressionThresholds;
-use mcp_loadtest::config::{Config, HistoryOutputConfig};
-use mcp_loadtest::history::{
-    HistorySampleV1, HistoryStore, TrendPolicy, TrendStatus, evaluate_and_record,
-    render_trend_markdown,
-};
-use mcp_loadtest::report::Report;
-use mcp_loadtest::report::wire::MetricsDocumentV1;
+use mcp_loadtest::config::Config;
+use mcp_loadtest::report::failure_reasons;
 use mcp_loadtest::run::Run;
 
 use crate::emit::emit_reports;
@@ -80,8 +74,6 @@ pub async fn run_from_config_with_output(
     let scenario = build_scenario(&config.scenario.kind, &config.scenario.params)?;
     let output_dir = config.output.report_dir.clone();
     let formats = config.output.formats.clone();
-    let history = config.output.history.clone();
-    let execution_fingerprint = local_execution_fingerprint(&config);
 
     let capture = if tee_stderr {
         StderrCapture::Tee
@@ -101,91 +93,13 @@ pub async fn run_from_config_with_output(
     let report = run.execute().await?;
 
     emit_reports(&report, &formats, &output_dir)?;
-    let history_gate = match history {
-        Some(history) => update_history(&report, &output_dir, &history, execution_fingerprint)?,
-        None => None,
-    };
     if !report.passed() {
         anyhow::bail!(
-            "run failed correctness gate — {} threshold violation(s), {} deadlock(s), \
-             {} divergence(s), {} incomplete worker(s), {} teardown failure(s), \
-             {}/{} successful calls; see report",
-            report.threshold_violations.len(),
-            report.scenario_outcome.deadlock_count,
-            report.scenario_outcome.divergence_count,
-            report.scenario_outcome.incomplete_worker_count,
-            report.scenario_outcome.teardown_failure_count,
+            "run failed correctness gate — {}; {}/{} successful calls; see report",
+            failure_reasons(&report).join(", "),
             report.scenario_outcome.successful_calls,
             report.scenario_outcome.total_calls,
         );
     }
-    if let Some(message) = history_gate {
-        anyhow::bail!("{message}");
-    }
     Ok(())
-}
-
-fn local_execution_fingerprint(config: &Config) -> String {
-    let concurrency = config
-        .scenario
-        .params
-        .get("concurrent")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(10);
-    format!(
-        "local/transport={}/concurrency={concurrency}",
-        config.server.transport
-    )
-}
-
-fn update_history(
-    report: &Report,
-    output_dir: &Path,
-    config: &HistoryOutputConfig,
-    execution_fingerprint: String,
-) -> Result<Option<String>> {
-    let document = MetricsDocumentV1::from(report);
-    let sample = HistorySampleV1::from_metrics(
-        config.series.clone(),
-        &document,
-        Some(execution_fingerprint),
-    )
-    .context("building baseline history sample")?;
-    let policy = TrendPolicy {
-        window: config.window,
-        min_samples: config.min_samples,
-        regression: RegressionThresholds {
-            p99_pct: config.max_p99_regression_pct,
-            error_rate_pp: config.max_error_rate_regression_pp,
-            deadlock_zero_tolerance: config.deadlock_zero_tolerance,
-        },
-        max_rps_drop_pct: config.max_rps_drop_pct,
-    };
-    let update = evaluate_and_record(&HistoryStore::new(&config.directory), &sample, &policy)
-        .context("evaluating and recording baseline history")?;
-
-    let trend_path = output_dir.join(&report.run_id).join("trend.md");
-    std::fs::write(&trend_path, render_trend_markdown(&update.trend))
-        .with_context(|| format!("writing {}", trend_path.display()))?;
-
-    if update.trend.has_regression {
-        let metrics = update
-            .trend
-            .regressions
-            .iter()
-            .map(|metric| metric.metric.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        return Ok(Some(format!(
-            "baseline history regression: {metrics}; see {}",
-            trend_path.display()
-        )));
-    }
-    if config.require_history && update.trend.status == TrendStatus::WarmingUp {
-        return Ok(Some(format!(
-            "baseline history requires {} comparable samples but found {}; current evidence was recorded",
-            update.trend.required_sample_count, update.trend.baseline_sample_count
-        )));
-    }
-    Ok(None)
 }

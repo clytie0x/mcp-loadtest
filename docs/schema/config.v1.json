@@ -284,8 +284,7 @@
           "enum": [
             "stdio",
             "http",
-            "sse",
-            "ws"
+            "sse"
           ],
           "default": "stdio"
         },
@@ -462,58 +461,6 @@
               }
             ]
           }
-        },
-        {
-          "title": "WebSocket",
-          "properties": {
-            "transport": {
-              "const": "ws"
-            },
-            "url": {
-              "pattern": "^wss?://"
-            },
-            "protocol_version": {
-              "enum": [
-                "auto",
-                "2025-03-26",
-                "2025-06-18",
-                "2025-11-25"
-              ]
-            }
-          },
-          "required": [
-            "transport",
-            "url"
-          ],
-          "not": {
-            "anyOf": [
-              {
-                "required": [
-                  "command"
-                ]
-              },
-              {
-                "required": [
-                  "args"
-                ]
-              },
-              {
-                "required": [
-                  "env"
-                ]
-              },
-              {
-                "required": [
-                  "working_dir"
-                ]
-              },
-              {
-                "required": [
-                  "auth"
-                ]
-              }
-            ]
-          }
         }
       ],
       "allOf": [
@@ -549,7 +496,7 @@
           "then": {
             "properties": {
               "url": {
-                "pattern": "^(?:https|wss)://"
+                "pattern": "^https://"
               }
             }
           }
@@ -614,62 +561,6 @@
         }
       }
     },
-    "historyOutput": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "series"
-      ],
-      "properties": {
-        "series": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64,
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
-          "description": "Portable baseline-series token. Windows reserved device names are rejected by the runtime."
-        },
-        "directory": {
-          "$ref": "#/$defs/path",
-          "default": "./runs/history"
-        },
-        "window": {
-          "type": "integer",
-          "minimum": 1,
-          "default": 10
-        },
-        "min_samples": {
-          "type": "integer",
-          "minimum": 1,
-          "default": 3
-        },
-        "require_history": {
-          "type": "boolean",
-          "default": false
-        },
-        "max_p99_regression_pct": {
-          "type": "number",
-          "exclusiveMinimum": 0,
-          "default": 10
-        },
-        "max_error_rate_regression_pp": {
-          "type": "number",
-          "exclusiveMinimum": 0,
-          "default": 0.5
-        },
-        "max_rps_drop_pct": {
-          "type": [
-            "number",
-            "null"
-          ],
-          "exclusiveMinimum": 0,
-          "default": 10
-        },
-        "deadlock_zero_tolerance": {
-          "type": "boolean",
-          "default": true
-        }
-      }
-    },
     "output": {
       "type": "object",
       "additionalProperties": false,
@@ -686,7 +577,6 @@
               "terminal",
               "markdown",
               "json",
-              "html",
               "junit",
               "prometheus"
             ]
@@ -697,9 +587,6 @@
             "markdown",
             "json"
           ]
-        },
-        "history": {
-          "$ref": "#/$defs/historyOutput"
         }
       }
     },
@@ -1002,249 +889,6 @@
         }
       ]
     },
-    "spikeScenario": {
-      "title": "Traffic spike",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "tool"
-      ],
-      "properties": {
-        "type": {
-          "const": "spike"
-        },
-        "baseline_concurrent": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4294967295,
-          "default": 5
-        },
-        "spike_concurrent": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4294967295,
-          "default": 50
-        },
-        "warmup": {
-          "$ref": "#/$defs/duration",
-          "default": "30s"
-        },
-        "spike_duration": {
-          "$ref": "#/$defs/positiveDuration",
-          "default": "30s"
-        },
-        "cooldown": {
-          "$ref": "#/$defs/duration",
-          "default": "30s"
-        },
-        "tool": {
-          "type": "string",
-          "minLength": 1
-        },
-        "args": {
-          "$ref": "#/$defs/argsObject"
-        }
-      }
-    },
-    "breakingPoint": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "max_p99_latency": {
-          "$ref": "#/$defs/positiveDuration"
-        },
-        "p99_latency": {
-          "$ref": "#/$defs/positiveDuration",
-          "description": "Legacy alias for max_p99_latency."
-        },
-        "max_error_rate": {
-          "type": "number",
-          "minimum": 0
-        },
-        "error_rate": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Legacy alias for max_error_rate."
-        },
-        "window_secs": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        }
-      }
-    },
-    "rampScenario": {
-      "title": "Concurrency ramp",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "tool"
-      ],
-      "properties": {
-        "type": {
-          "const": "ramp"
-        },
-        "from_concurrent": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4294967295
-        },
-        "ramp_from": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4294967295,
-          "description": "Legacy alias for from_concurrent."
-        },
-        "from": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4294967295,
-          "description": "Legacy alias for from_concurrent."
-        },
-        "to_concurrent": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4294967295
-        },
-        "ramp_to": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4294967295,
-          "description": "Legacy alias for to_concurrent."
-        },
-        "to": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4294967295,
-          "description": "Legacy alias for to_concurrent."
-        },
-        "step_duration": {
-          "$ref": "#/$defs/positiveDuration"
-        },
-        "step": {
-          "$ref": "#/$defs/positiveDuration",
-          "description": "Legacy alias for step_duration."
-        },
-        "ramp_step": {
-          "$ref": "#/$defs/positiveDuration",
-          "description": "Legacy alias for step_duration."
-        },
-        "step_increment": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4294967295,
-          "default": 1
-        },
-        "tool": {
-          "type": "string",
-          "minLength": 1
-        },
-        "args": {
-          "$ref": "#/$defs/argsObject"
-        },
-        "breaking_point": {
-          "$ref": "#/$defs/breakingPoint"
-        }
-      },
-      "allOf": [
-        {
-          "anyOf": [
-            {
-              "required": [
-                "from_concurrent"
-              ]
-            },
-            {
-              "required": [
-                "ramp_from"
-              ]
-            },
-            {
-              "required": [
-                "from"
-              ]
-            }
-          ]
-        },
-        {
-          "anyOf": [
-            {
-              "required": [
-                "to_concurrent"
-              ]
-            },
-            {
-              "required": [
-                "ramp_to"
-              ]
-            },
-            {
-              "required": [
-                "to"
-              ]
-            }
-          ]
-        },
-        {
-          "anyOf": [
-            {
-              "required": [
-                "step_duration"
-              ]
-            },
-            {
-              "required": [
-                "step"
-              ]
-            },
-            {
-              "required": [
-                "ramp_step"
-              ]
-            }
-          ]
-        }
-      ]
-    },
-    "soakScenario": {
-      "title": "Soak test",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "tool"
-      ],
-      "properties": {
-        "type": {
-          "const": "soak"
-        },
-        "concurrent": {
-          "const": 1,
-          "default": 1
-        },
-        "duration": {
-          "$ref": "#/$defs/positiveDuration",
-          "default": "60s"
-        },
-        "tool": {
-          "type": "string",
-          "minLength": 1
-        },
-        "args": {
-          "$ref": "#/$defs/argsObject"
-        },
-        "sample_interval": {
-          "$ref": "#/$defs/positiveDuration",
-          "default": "10s"
-        },
-        "latency_drift_ms_per_sec": {
-          "type": "number",
-          "minimum": 0,
-          "default": 0
-        }
-      }
-    },
     "raceCheckScenario": {
       "title": "Race check",
       "type": "object",
@@ -1272,51 +916,47 @@
         }
       }
     },
-    "fuzzerScenario": {
-      "title": "Protocol fuzzer",
+    "lostUpdateScenario": {
+      "title": "Lost update",
+      "description": "Concurrent uniquely-marked writes across independent sessions, then one read that must contain every acknowledged write.",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "type"
+        "type",
+        "write_tool",
+        "write_args",
+        "read_tool"
       ],
       "properties": {
         "type": {
-          "const": "fuzzer"
+          "const": "lost_update"
         },
-        "iterations": {
+        "concurrent": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 4294967295,
+          "default": 10
+        },
+        "writes_per_worker": {
           "type": "integer",
           "minimum": 1,
           "maximum": 4294967295,
-          "default": 50
+          "default": 5
         },
-        "seed": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 18446744073709551615,
-          "default": 12648430
+        "write_tool": {
+          "type": "string",
+          "minLength": 1
         },
-        "payloads": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "enum": [
-              "EmptyBody",
-              "EmptyObject",
-              "InvalidJson",
-              "MissingJsonRpcVersion",
-              "WrongJsonRpcVersion",
-              "UnknownMethod",
-              "NumericMethod",
-              "MissingId",
-              "DuplicateId",
-              "GiantPayload",
-              "ControlChars",
-              "Nested",
-              "NullParams",
-              "StringParams"
-            ]
-          }
+        "write_args": {
+          "$ref": "#/$defs/argsObject",
+          "description": "String values may use {marker} (required), {worker}, and {seq}."
+        },
+        "read_tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "read_args": {
+          "$ref": "#/$defs/argsObject"
         }
       }
     },
@@ -1442,19 +1082,10 @@
           "$ref": "#/$defs/coldStartScenario"
         },
         {
-          "$ref": "#/$defs/rampScenario"
-        },
-        {
-          "$ref": "#/$defs/soakScenario"
-        },
-        {
-          "$ref": "#/$defs/spikeScenario"
-        },
-        {
-          "$ref": "#/$defs/fuzzerScenario"
-        },
-        {
           "$ref": "#/$defs/raceCheckScenario"
+        },
+        {
+          "$ref": "#/$defs/lostUpdateScenario"
         },
         {
           "$ref": "#/$defs/patternScenario"

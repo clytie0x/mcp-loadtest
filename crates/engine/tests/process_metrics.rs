@@ -107,7 +107,7 @@ async fn samples_self_pid_for_2_seconds() {
 }
 
 /// The orchestrator's `rss_leak_mb_per_sec` threshold feeds
-/// `ProcessStats::samples` straight into `scenario::soak::detect_leak` as
+/// `ProcessStats::samples` straight into `leak_detect::detect_leak` as
 /// `(at_secs, rss_mb)` points. Verify a real sampler run produces a series
 /// the regression can actually fit: chronological, finite, non-degenerate
 /// time axis.
@@ -147,7 +147,7 @@ async fn rss_samples_feed_leak_detector() {
         .iter()
         .map(|s| (s.at_secs, s.rss_mb))
         .collect();
-    let slope = mcp_loadtest_engine::scenario::soak::detect_leak(&series)
+    let slope = mcp_loadtest_engine::leak_detect::detect_leak(&series)
         .expect("≥3 chronological samples with distinct at_secs must fit a slope");
     assert!(
         slope.is_finite(),

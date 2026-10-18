@@ -67,12 +67,24 @@ pub(crate) fn format_server_command(report: &Report) -> String {
     s
 }
 
-/// Build the parenthesised reason that follows the `FAIL` badge. Mentions
-/// every signal that contributed (deadlocks first since they're the loudest).
+/// Build the parenthesised reason that follows the `FAIL` badge.
 ///
 /// Used by both markdown and terminal reporters so the wording stays
 /// consistent.
 pub(crate) fn describe_failure(report: &Report) -> String {
+    let reasons = failure_reasons(report);
+    if reasons.is_empty() {
+        // Defensive fallback for a future unconditional Report::passed signal
+        // that this formatter has not learned yet.
+        return "unspecified failure".to_string();
+    }
+    reasons.join(", ")
+}
+
+/// Every signal that makes `report` fail, deadlocks first since they're the
+/// loudest. Empty for a passing report. The `serve --mcp` tools return this
+/// list so an agent can act on the reasons without parsing prose.
+pub fn failure_reasons(report: &Report) -> Vec<String> {
     let dc = report.scenario_outcome.deadlock_count;
     let divergences = report.scenario_outcome.divergence_count;
     let tv = report.threshold_violations.len();
@@ -86,6 +98,16 @@ pub(crate) fn describe_failure(report: &Report) -> String {
             if divergences == 1 { "" } else { "s" }
         ));
     }
+    let lost = report.scenario_outcome.lost_update_count;
+    if lost > 0 {
+        parts.push(format!(
+            "{lost} lost update{}",
+            if lost == 1 { "" } else { "s" }
+        ));
+    }
+    if report.scenario_name == "lost_update" && report.scenario_outcome.error_count > 0 {
+        parts.push("incomplete lost-update check".to_owned());
+    }
     if report.scenario_name == "race_check" && report.scenario_outcome.error_count > 0 {
         parts.push("incomplete race-check cohort".to_owned());
     }
@@ -93,13 +115,6 @@ pub(crate) fn describe_failure(report: &Report) -> String {
         let errors = report.scenario_outcome.error_count;
         parts.push(format!(
             "{errors} probe error{}",
-            if errors == 1 { "" } else { "s" }
-        ));
-    }
-    if report.scenario_name == "fuzzer" && report.scenario_outcome.error_count > 0 {
-        let errors = report.scenario_outcome.error_count;
-        parts.push(format!(
-            "{errors} unexpected fuzzer error{}",
             if errors == 1 { "" } else { "s" }
         ));
     }
@@ -151,12 +166,7 @@ pub(crate) fn describe_failure(report: &Report) -> String {
             if tv == 1 { "violation" } else { "violations" }
         ));
     }
-    if parts.is_empty() {
-        // Defensive fallback for a future unconditional Report::passed signal
-        // that this formatter has not learned yet.
-        return "unspecified failure".to_string();
-    }
-    parts.join(", ")
+    parts
 }
 
 #[cfg(test)]

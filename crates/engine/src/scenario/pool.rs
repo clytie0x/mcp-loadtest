@@ -207,6 +207,7 @@ fn merge_worker_outcome(into: &mut ScenarioOutcome, idx: u32, from: ScenarioOutc
     into.deadlock_count += from.deadlock_count;
     into.error_count += from.error_count;
     into.divergence_count += from.divergence_count;
+    into.lost_update_count += from.lost_update_count;
     into.incomplete_worker_count += from.incomplete_worker_count;
     into.teardown_failure_count += from.teardown_failure_count;
     into.hung_for_ms.extend(from.hung_for_ms);
@@ -339,6 +340,7 @@ mod tests {
             deadlock_count: 1,
             error_count: 2,
             divergence_count: 1,
+            lost_update_count: 1,
             incomplete_worker_count: 1,
             teardown_failure_count: 1,
             notes: vec!["terminal error after 5 calls".to_owned()],
@@ -351,6 +353,7 @@ mod tests {
         assert_eq!(total.deadlock_count, 1);
         assert_eq!(total.error_count, 2);
         assert_eq!(total.divergence_count, 1);
+        assert_eq!(total.lost_update_count, 1);
         assert_eq!(total.incomplete_worker_count, 1);
         assert_eq!(total.teardown_failure_count, 1);
         assert_eq!(total.hung_for_ms, vec![1234]);

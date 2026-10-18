@@ -19,7 +19,6 @@ use mcp_loadtest::protocol::transport::HostGuard;
 use mcp_loadtest::protocol::transport::http::HttpTransport;
 use mcp_loadtest::protocol::transport::sse::SseTransport;
 use mcp_loadtest::protocol::transport::stdio::StdioTransport;
-use mcp_loadtest::protocol::transport::ws::WsTransport;
 use mcp_loadtest::trace::ReplayReport;
 use mcp_loadtest::trace::replay::replay_file;
 
@@ -106,7 +105,7 @@ async fn build_transport(args: &ReplayArgs) -> Result<Box<dyn Transport>> {
                 .with_context(|| format!("spawning `{server}`"))?;
             Ok(Box::new(t))
         }
-        kind @ ("http" | "sse" | "ws") => {
+        kind @ ("http" | "sse") => {
             let url = args
                 .url
                 .as_deref()
@@ -114,12 +113,11 @@ async fn build_transport(args: &ReplayArgs) -> Result<Box<dyn Transport>> {
             let guard = host_guard(&args.allow_hosts);
             let t: Box<dyn Transport> = match kind {
                 "http" => Box::new(HttpTransport::connect(url, &guard).await?),
-                "sse" => Box::new(SseTransport::connect(url, &guard).await?),
-                _ => Box::new(WsTransport::connect(url, &guard).await?),
+                _ => Box::new(SseTransport::connect(url, &guard).await?),
             };
             Ok(t)
         }
-        other => anyhow::bail!("unknown --transport `{other}` (expected stdio|http|sse|ws)"),
+        other => anyhow::bail!("unknown --transport `{other}` (expected stdio|http|sse)"),
     }
 }
 
@@ -213,7 +211,7 @@ mod tests {
 
     #[tokio::test]
     async fn url_transports_require_url_flag() {
-        for kind in ["http", "sse", "ws"] {
+        for kind in ["http", "sse"] {
             let args = ReplayArgs {
                 trace_file: PathBuf::from("t.jsonl"),
                 server: None,

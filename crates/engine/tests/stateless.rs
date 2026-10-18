@@ -628,25 +628,21 @@ async fn deadlock_probe_catches_stateless_lazy_deadlock() {
 }
 
 #[test]
-fn stateless_config_is_rejected_on_sse_and_ws() {
-    for transport in ["sse", "ws"] {
-        let toml = format!(
-            r#"
-            [server]
-            transport = "{transport}"
-            url = "wss://example.com/mcp"
-            protocol_version = "2026-07-28"
-            [scenario]
-            type = "sustained"
-            tool = "echo"
-            "#
-        );
-        let err = Config::from_toml_str(&toml).unwrap_err();
-        assert!(
-            err.to_string().contains("stateless"),
-            "{transport}: expected the ADR 0019 scope error, got: {err}"
-        );
-    }
+fn stateless_config_is_rejected_on_sse() {
+    let toml = r#"
+        [server]
+        transport = "sse"
+        url = "https://example.com/mcp"
+        protocol_version = "2026-07-28"
+        [scenario]
+        type = "sustained"
+        tool = "echo"
+    "#;
+    let err = Config::from_toml_str(toml).unwrap_err();
+    assert!(
+        err.to_string().contains("stateless"),
+        "expected the ADR 0019 scope error, got: {err}"
+    );
 }
 
 #[test]

@@ -4,16 +4,13 @@
 //! Split out of `tools.rs` in M8 to keep per-tool files under the 300-LoC
 //! convention.
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use crate::config::{Config, OutputConfig, ScenarioConfig, ServerConfig};
-use crate::run::Run;
 use crate::scenario::sustained::Sustained;
 
-use super::{ToolError, required_str, split_server_command};
+use super::{ToolError, duration_ms, required_str, run_stdio, run_target, u32_arg, verdict};
 
 pub(super) fn sustained_load_def() -> Value {
     json!({
@@ -53,35 +50,20 @@ pub(super) fn sustained_load_def() -> Value {
 }
 
 pub(super) async fn sustained_load(args: &Value) -> Result<Value, ToolError> {
-    let server_command = required_str(args, "server_command")?;
+    let target = run_target(args)?;
     let tool = required_str(args, "tool")?;
-    let concurrent = args.get("concurrent").and_then(Value::as_u64).unwrap_or(10) as u32;
-    let duration_ms = args
+    let concurrent = u32_arg(args, "concurrent", 10)?;
+    let run_ms = args
         .get("duration_ms")
         .and_then(Value::as_u64)
         .ok_or_else(|| ToolError::InvalidArgs("duration_ms is required".into()))?;
-    let call_args = args.get("args").cloned().unwrap_or(json!({}));
-
-    let (command, cmd_args) = split_server_command(&server_command)?;
-    let server_cfg = ServerConfig::stdio(command, cmd_args);
     let scenario = Sustained {
         concurrent,
-        duration: Duration::from_millis(duration_ms),
+        duration: Duration::from_millis(run_ms),
         tool,
-        args: call_args,
+        args: args.get("args").cloned().unwrap_or(json!({})),
     };
-    // `Config`/`ScenarioConfig`/`OutputConfig` are `#[non_exhaustive]` and
-    // now live in `mcp-loadtest-core` — build via the constructors + builders
-    // rather than an exhaustive struct literal (rejected across the crate
-    // boundary).
-    let config = Config::new(server_cfg, ScenarioConfig::new("sustained", json!({})))
-        .with_output(OutputConfig::new(PathBuf::from("./runs"), vec![]));
-
-    let run = Run::new(config, Box::new(scenario), PathBuf::from("./runs"));
-    let report = run
-        .execute()
-        .await
-        .map_err(|e| ToolError::Run(e.to_string()))?;
+    let report = run_stdio(&target, "sustained", Box::new(scenario)).await?;
 
     let total = report.metrics.throughput.total_requests;
     let success = report.metrics.throughput.successful_requests;
@@ -92,23 +74,29 @@ pub(super) async fn sustained_load(args: &Value) -> Result<Value, ToolError> {
         errors as f64 / total as f64
     };
 
-    Ok(json!({
-        "passed": report.passed(),
-        "p50_ms": duration_to_ms(report.metrics.latency.p50),
-        "p95_ms": duration_to_ms(report.metrics.latency.p95),
-        "p99_ms": duration_to_ms(report.metrics.latency.p99),
-        "p999_ms": duration_to_ms(report.metrics.latency.p999),
-        "error_rate": error_rate,
-        "requests_per_sec": report.metrics.throughput.requests_per_sec,
-        "total_requests": total,
-        "successful_requests": success,
-        "incomplete_worker_count": report.scenario_outcome.incomplete_worker_count,
-        "teardown_failure_count": report.scenario_outcome.teardown_failure_count,
-        "threshold_violation_count": report.threshold_violations.len(),
-        "run_id": report.run_id,
-    }))
-}
-
-fn duration_to_ms(d: Duration) -> f64 {
-    d.as_secs_f64() * 1000.0
+    let mut out = verdict(&report, &target);
+    out.insert(
+        "p50_ms".into(),
+        json!(duration_ms(report.metrics.latency.p50)),
+    );
+    out.insert(
+        "p95_ms".into(),
+        json!(duration_ms(report.metrics.latency.p95)),
+    );
+    out.insert(
+        "p99_ms".into(),
+        json!(duration_ms(report.metrics.latency.p99)),
+    );
+    out.insert(
+        "p999_ms".into(),
+        json!(duration_ms(report.metrics.latency.p999)),
+    );
+    out.insert("error_rate".into(), json!(error_rate));
+    out.insert(
+        "requests_per_sec".into(),
+        json!(report.metrics.throughput.requests_per_sec),
+    );
+    out.insert("total_requests".into(), json!(total));
+    out.insert("successful_requests".into(), json!(success));
+    Ok(Value::Object(out))
 }

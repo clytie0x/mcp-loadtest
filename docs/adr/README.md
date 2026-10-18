@@ -30,6 +30,9 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0022](0022-six-crate-workspace.md)            | Six-crate layered workspace (core/protocol/engine/output/facade/cli)  | Accepted; seven crates since v0.2.0 (outcome note) |
 | [0023](0023-mcp-2026-final-reconciliation.md)  | Reconcile the scoped MCP 2026-07-28 implementation to the final tag   | Accepted; scoped experimental implementation |
 | [0024](0024-reposition-as-mcp-bug-detector.md) | Strategy: reposition as an MCP concurrency-bug CI gate (supersedes 0004) | Accepted |
+| [0025](0025-trim-to-detector-surface.md)      | Trim the workspace to the detector surface (applies 0024)             | Accepted |
+| [0026](0026-advance-conformance-pin-c37eec8.md) | Advance the reviewed conformance pin to c37eec8 (updates 0023)      | Accepted |
+| [0027](0027-lost-update-detector.md)          | Lost-update detector with per-write markers                           | Accepted |
 
 ## When to write a new ADR
 

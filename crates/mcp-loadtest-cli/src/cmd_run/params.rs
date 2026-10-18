@@ -10,9 +10,6 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
 
-use mcp_loadtest::analysis::breaking_point::BreakingPointConfig;
-use mcp_loadtest::scenario::fuzzer::FuzzPayload;
-
 /// Extract a required string field from a `params` blob, erroring with a
 /// human-readable message if missing or the wrong shape.
 pub(crate) fn required_str(params: &Value, key: &str) -> Result<String> {
@@ -40,118 +37,11 @@ pub(crate) fn u32_field(params: &Value, key: &str, default: u32) -> Result<u32> 
     }
 }
 
-/// Read a required `u32` field, accepting any of `keys` as aliases.
-pub(crate) fn required_u32_alias(params: &Value, keys: &[&str]) -> Result<u32> {
-    for key in keys {
-        if let Some(v) = params.get(*key) {
-            return value_as_u32(v, key);
-        }
-    }
-    Err(anyhow!("scenario.{} (integer) is required", keys[0]))
-}
-
 fn value_as_u32(v: &Value, key: &str) -> Result<u32> {
     let n = v
         .as_u64()
         .ok_or_else(|| anyhow!("scenario.{key} must be a non-negative integer"))?;
     u32::try_from(n).with_context(|| format!("scenario.{key} exceeds u32::MAX"))
-}
-
-/// Read an optional `u64` field, falling back to `default` when absent.
-pub(crate) fn u64_field(params: &Value, key: &str, default: u64) -> Result<u64> {
-    match params.get(key) {
-        Some(v) => v
-            .as_u64()
-            .ok_or_else(|| anyhow!("scenario.{key} must be a non-negative integer")),
-        None => Ok(default),
-    }
-}
-
-/// Read an optional `f64` field, falling back to `default` when absent.
-pub(crate) fn f64_field(params: &Value, key: &str, default: f64) -> Result<f64> {
-    match params.get(key) {
-        Some(v) => v
-            .as_f64()
-            .ok_or_else(|| anyhow!("scenario.{key} must be a number")),
-        None => Ok(default),
-    }
-}
-
-/// Read a required duration field, accepting any of `keys` as aliases.
-pub(crate) fn required_dur_alias(params: &Value, keys: &[&str]) -> Result<Duration> {
-    for key in keys {
-        if let Some(v) = params.get(*key) {
-            return parse_dur_field(Some(v), Duration::ZERO)
-                .with_context(|| format!("parsing scenario.{key}"));
-        }
-    }
-    Err(anyhow!(
-        "scenario.{} (duration string like '5s') is required",
-        keys[0]
-    ))
-}
-
-/// Parse the optional `breaking_point` sub-object inside a `ramp` config.
-/// Absent → `None` (no breaking-point detection). `window_secs` defaults to
-/// the ramp's `step_duration` so each step is judged over its own window.
-pub(crate) fn parse_breaking_point(
-    params: &Value,
-    step_duration: Duration,
-) -> Result<Option<BreakingPointConfig>> {
-    let Some(v) = params.get("breaking_point") else {
-        return Ok(None);
-    };
-    let obj = v
-        .as_object()
-        .ok_or_else(|| anyhow!("scenario.breaking_point must be an object"))?;
-    let max_p99_latency = parse_dur_field(
-        obj.get("max_p99_latency")
-            .or_else(|| obj.get("p99_latency")),
-        Duration::MAX,
-    )
-    .context("parsing scenario.breaking_point.max_p99_latency")?;
-    let max_error_rate = match obj.get("max_error_rate").or_else(|| obj.get("error_rate")) {
-        Some(v) => v
-            .as_f64()
-            .ok_or_else(|| anyhow!("scenario.breaking_point.max_error_rate must be a number"))?,
-        None => f64::INFINITY,
-    };
-    let window_secs = match obj.get("window_secs") {
-        Some(v) => v
-            .as_f64()
-            .ok_or_else(|| anyhow!("scenario.breaking_point.window_secs must be a number"))?,
-        None => step_duration.as_secs_f64(),
-    };
-    Ok(Some(BreakingPointConfig {
-        max_p99_latency,
-        max_error_rate,
-        window_secs,
-    }))
-}
-
-/// Parse the optional `payloads` array of a `fuzzer` config into the
-/// corresponding [`FuzzPayload`] variants (case-insensitive label match).
-pub(crate) fn parse_fuzz_payloads(params: &Value) -> Result<Vec<FuzzPayload>> {
-    let Some(v) = params.get("payloads") else {
-        return Ok(Vec::new());
-    };
-    let arr = v
-        .as_array()
-        .ok_or_else(|| anyhow!("scenario.payloads must be an array of strings"))?;
-    let all = FuzzPayload::all();
-    let mut out = Vec::with_capacity(arr.len());
-    for item in arr {
-        let label = item
-            .as_str()
-            .ok_or_else(|| anyhow!("scenario.payloads entries must be strings"))?;
-        let payload = all
-            .iter()
-            .copied()
-            .find(|p| p.label() == label || p.label().eq_ignore_ascii_case(label))
-            .ok_or_else(|| anyhow!("unknown fuzzer payload label: {label}"))?;
-        out.push(payload);
-    }
-    Ok(out)
 }
 
 /// Parse a `params.<field>` slot as a humantime duration string, falling
@@ -207,12 +97,5 @@ mod tests {
             Duration::from_millis(250)
         );
         assert!(parse_dur_field(Some(&json!(5)), Duration::ZERO).is_err());
-    }
-
-    #[test]
-    fn required_dur_alias_accepts_any_alias() {
-        let p = json!({"ramp_step": "1s"});
-        let d = required_dur_alias(&p, &["step_duration", "step", "ramp_step"]).unwrap();
-        assert_eq!(d, Duration::from_secs(1));
     }
 }

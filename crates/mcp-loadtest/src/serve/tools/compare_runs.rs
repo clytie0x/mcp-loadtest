@@ -394,6 +394,7 @@ mod tests {
             trace_path: None,
             threshold_violations: vec![],
             coverage: None,
+            per_tool: Default::default(),
         };
 
         let rendered = JsonReporter.render(&report).expect("json render");

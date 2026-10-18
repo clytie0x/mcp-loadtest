@@ -103,12 +103,8 @@ fn write_header(out: &mut String, report: &Report) -> std::fmt::Result {
 fn write_throughput(out: &mut String, report: &Report) -> std::fmt::Result {
     let tp = &report.metrics.throughput;
     let total = tp.total_requests;
-    let expected_rejections = report.metrics.outcomes.expected_rejection;
-    // Throughput treats an expected fuzz rejection as a healthy probe. Keep
-    // the human "ok" label for ordinary successes and show the expected
-    // subset separately so it cannot be mistaken for a normal tool result.
-    let ok = tp.successful_requests.saturating_sub(expected_rejections);
-    let errors = total.saturating_sub(ok.saturating_add(expected_rejections));
+    let ok = tp.successful_requests;
+    let errors = total.saturating_sub(ok);
     let error_rate_pct = if total == 0 {
         0.0
     } else {
@@ -135,13 +131,6 @@ fn write_throughput(out: &mut String, report: &Report) -> std::fmt::Result {
         "  requests:  {total_s} total · {ok_s} ok · {errors_s} errors {pct_s}",
     )?;
 
-    if expected_rejections > 0 {
-        writeln!(
-            out,
-            "  expected rejections: {}",
-            style(fmt_count(expected_rejections)).cyan()
-        )?;
-    }
     if report.scenario_outcome.teardown_failure_count > 0 {
         writeln!(
             out,
@@ -365,6 +354,7 @@ mod tests {
                 actual: "123.4ms".to_string(),
             }],
             coverage: None,
+            per_tool: Default::default(),
         }
     }
 

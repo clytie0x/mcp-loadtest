@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 # Pin the exact official final specification revision and reviewed
 # conformance harness revision. Every applicable client-role scenario in the
 # reviewed inventory must be present in the scope manifest and executed.
-$ConformanceRef = "49103de6ed70804e940637bf3e9e29e4a3f54e64"
+$ConformanceRef = "c37eec888e1c6ff140af79987a40008548b7cc5f"
 $ConformanceSpecSource = "71e306956a4959c9655e5036be215d41986596e6"
 $SpecRef = "5f5440bb26a62e2cf3440b92da5a667efa03b267"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path

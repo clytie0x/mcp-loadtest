@@ -7,7 +7,7 @@ use crate::version::ProtocolVersion;
 use url::Url;
 
 /// Transports recognized by the parser + runtime.
-pub(super) const KNOWN_TRANSPORTS: &[&str] = &["stdio", "http", "sse", "ws"];
+pub(super) const KNOWN_TRANSPORTS: &[&str] = &["stdio", "http", "sse"];
 
 /// Scenario kinds the parser knows about. Mirrors §8 of DESIGN.md and the
 /// modules actually shipped under `src/scenario/`. Keep this in sync with the
@@ -17,11 +17,8 @@ pub(super) const KNOWN_SCENARIOS: &[&str] = &[
     "sustained",
     "deadlock_probe",
     "cold_start",
-    "ramp",
-    "soak",
-    "spike",
-    "fuzzer",
     "race_check",
+    "lost_update",
     "pattern",
     "version_matrix",
 ];
@@ -45,7 +42,7 @@ pub(super) fn validate(cfg: &Config) -> Result<(), ConfigError> {
                 "server.command is required when transport = \"stdio\"".into(),
             ));
         }
-        "http" | "sse" | "ws" if cfg.server.url.is_none() => {
+        "http" | "sse" if cfg.server.url.is_none() => {
             return Err(ConfigError::Invalid(format!(
                 "server.url is required when transport = \"{}\"",
                 cfg.server.transport
@@ -88,8 +85,8 @@ pub(super) fn validate(cfg: &Config) -> Result<(), ConfigError> {
         };
         // Stateless mode ships for stdio + Streamable HTTP only
         // (ADR 0019 scope): SSE is the legacy transport the stateless core
-        // retires, WS support is deferred.
-        if parsed.is_stateless() && matches!(cfg.server.transport.as_str(), "sse" | "ws") {
+        // retires.
+        if parsed.is_stateless() && cfg.server.transport == "sse" {
             return Err(ConfigError::Invalid(format!(
                 "server.protocol_version: `{v}` (stateless) is not supported on the `{}` \
                  transport — use \"stdio\" or \"http\" (ADR 0019)",
@@ -98,7 +95,7 @@ pub(super) fn validate(cfg: &Config) -> Result<(), ConfigError> {
         }
     }
 
-    if matches!(cfg.server.transport.as_str(), "http" | "sse" | "ws") {
+    if matches!(cfg.server.transport.as_str(), "http" | "sse") {
         let raw_url = cfg
             .server
             .url
@@ -161,14 +158,7 @@ pub(super) fn validate(cfg: &Config) -> Result<(), ConfigError> {
 }
 
 fn validate_output(cfg: &Config) -> Result<(), ConfigError> {
-    const FORMATS: &[&str] = &[
-        "terminal",
-        "markdown",
-        "json",
-        "html",
-        "junit",
-        "prometheus",
-    ];
+    const FORMATS: &[&str] = &["terminal", "markdown", "json", "junit", "prometheus"];
     let mut formats = std::collections::BTreeSet::new();
     for format in &cfg.output.formats {
         if !FORMATS.contains(&format.as_str()) {
@@ -184,74 +174,7 @@ fn validate_output(cfg: &Config) -> Result<(), ConfigError> {
         }
     }
 
-    if let Some(history) = &cfg.output.history {
-        if !portable_series_name(&history.series) {
-            return Err(ConfigError::Invalid(
-                "output.history.series: use 1..=64 ASCII letters, digits, `.`, `_`, or `-`".into(),
-            ));
-        }
-        if history.window == 0 {
-            return Err(ConfigError::Invalid(
-                "output.history.window: must be > 0".into(),
-            ));
-        }
-        if history.min_samples == 0 || history.min_samples > history.window {
-            return Err(ConfigError::Invalid(
-                "output.history.min_samples: must be in 1..=window".into(),
-            ));
-        }
-        for (field, value) in [
-            ("max_p99_regression_pct", history.max_p99_regression_pct),
-            (
-                "max_error_rate_regression_pp",
-                history.max_error_rate_regression_pp,
-            ),
-        ] {
-            if !value.is_finite() || value <= 0.0 {
-                return Err(ConfigError::Invalid(format!(
-                    "output.history.{field}: must be finite and > 0"
-                )));
-            }
-        }
-        if history
-            .max_rps_drop_pct
-            .is_some_and(|value| !value.is_finite() || value <= 0.0)
-        {
-            return Err(ConfigError::Invalid(
-                "output.history.max_rps_drop_pct: must be finite and > 0".into(),
-            ));
-        }
-    }
-
     Ok(())
-}
-
-fn portable_series_name(value: &str) -> bool {
-    if value.is_empty() || value.len() > 64 {
-        return false;
-    }
-    let mut bytes = value.bytes();
-    if !bytes
-        .next()
-        .is_some_and(|byte| byte.is_ascii_alphanumeric())
-        || !bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-    {
-        return false;
-    }
-    let stem = value
-        .split('.')
-        .next()
-        .unwrap_or(value)
-        .to_ascii_uppercase();
-    !matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        && !stem
-            .strip_prefix("COM")
-            .and_then(|suffix| suffix.parse::<u8>().ok())
-            .is_some_and(|number| (1..=9).contains(&number))
-        && !stem
-            .strip_prefix("LPT")
-            .and_then(|suffix| suffix.parse::<u8>().ok())
-            .is_some_and(|number| (1..=9).contains(&number))
 }
 
 fn validate_auth(cfg: &Config) -> Result<(), ConfigError> {
@@ -475,18 +398,11 @@ pub fn validate_remote_endpoint(
 ) -> Result<Url, String> {
     let url = Url::parse(raw).map_err(|_| "remote endpoint is not a valid absolute URL")?;
 
-    let scheme_is_valid = match transport {
-        "http" | "sse" => matches!(url.scheme(), "http" | "https"),
-        "ws" => matches!(url.scheme(), "ws" | "wss"),
-        _ => false,
-    };
-    if !scheme_is_valid {
-        return Err(match transport {
-            "http" | "sse" => "remote endpoint scheme must be http:// or https://",
-            "ws" => "remote endpoint scheme must be ws:// or wss://",
-            _ => "remote endpoint transport is unsupported",
-        }
-        .to_string());
+    if !matches!(transport, "http" | "sse") {
+        return Err("remote endpoint transport is unsupported".into());
+    }
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("remote endpoint scheme must be http:// or https://".into());
     }
     if url.host_str().is_none_or(str::is_empty) {
         return Err("remote endpoint must include a host".into());
@@ -497,17 +413,8 @@ pub fn validate_remote_endpoint(
     if url.fragment().is_some() {
         return Err("remote endpoint URL fragments are forbidden".into());
     }
-    if has_remote_headers {
-        let tls_scheme = match transport {
-            "http" | "sse" => "https",
-            "ws" => "wss",
-            _ => unreachable!("unsupported transport was rejected above"),
-        };
-        if url.scheme() != tls_scheme {
-            return Err(format!(
-                "server.headers_from_env requires the {tls_scheme}:// scheme"
-            ));
-        }
+    if has_remote_headers && url.scheme() != "https" {
+        return Err("server.headers_from_env requires the https:// scheme".into());
     }
 
     Ok(url)

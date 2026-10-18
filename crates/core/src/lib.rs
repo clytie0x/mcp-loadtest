@@ -4,7 +4,6 @@
 
 pub mod config;
 pub mod coverage;
-pub mod fuzz_report;
 /// Metrics recording layer — [`metrics::Recorder`], outcome/latency/
 /// throughput value types, and the sharded HDR histogram they're built on.
 pub mod metrics;

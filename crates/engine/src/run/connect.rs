@@ -26,7 +26,6 @@ use mcp_loadtest_protocol::transport::http::{HttpTransport, OAuthChallengeHandle
 use mcp_loadtest_protocol::transport::spawn_options::SpawnOptions;
 use mcp_loadtest_protocol::transport::sse::SseTransport;
 use mcp_loadtest_protocol::transport::stdio::StdioTransport;
-use mcp_loadtest_protocol::transport::ws::WsTransport;
 use mcp_loadtest_protocol::transport::{Transport, TransportError};
 use tokio::time::Instant as TokioInstant;
 use url::Url;
@@ -619,29 +618,7 @@ pub(super) async fn build_session(
                 .as_deref()
                 .ok_or_else(|| RunError::Config("sse transport requires url".into()))?;
             let transport = startup_connect(startup_deadline, startup_timeout, async {
-                SseTransport::connect_with_headers(url, &guard, remote_headers.clone())
-                    .await
-                    .map_err(SessionError::Transport)
-            })
-            .await?;
-            connect_session_before_deadline(
-                transport,
-                trace,
-                startup_deadline,
-                startup_timeout,
-                advertised,
-                ConnectionMode::Legacy,
-            )
-            .await?
-        }
-        "ws" => {
-            let url = config
-                .server
-                .url
-                .as_deref()
-                .ok_or_else(|| RunError::Config("ws transport requires url".into()))?;
-            let transport = startup_connect(startup_deadline, startup_timeout, async {
-                WsTransport::connect_with_headers(url, &guard, remote_headers)
+                SseTransport::connect_with_headers(url, &guard, remote_headers)
                     .await
                     .map_err(SessionError::Transport)
             })

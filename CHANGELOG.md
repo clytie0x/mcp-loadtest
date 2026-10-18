@@ -7,8 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — Release contents
+
+This section describes the source contents intended for `v0.3.0`. Its presence
+does not prove that the tag, checksums, platform archives, or GitHub Release
+have been published; verify those artifacts independently.
+
+This release narrows the tool to MCP concurrency-bug detection (ADR 0024,
+ADR 0025) and is breaking: see **Removed**.
+
+### Added
+
+- `lost_update` scenario and `serve --mcp` tool: concurrent sessions send
+  writes that each carry a unique `{marker}`, then one read must return every
+  acknowledged marker. Missing markers set `lost_update_count`, which fails
+  the run and appears in `metrics.json`, Prometheus, JUnit, and
+  `failure_reasons`. A control marker written on one session must be visible
+  to a read on another before any concurrent write; otherwise the check is
+  inconclusive (the read cannot observe writes, or sessions do not share
+  state). See
+  [ADR 0027](docs/adr/0027-lost-update-detector.md).
+- `serve --mcp` run tools take an optional `report_dir` and return the
+  `run_dir` holding the run's artifacts.
+- The official conformance runners pin `modelcontextprotocol/conformance`
+  `c37eec8` (was `49103de`) and also execute
+  `json-schema-2020-12-preservation`; all 33 client scenarios pass. See
+  [ADR 0026](docs/adr/0026-advance-conformance-pin-c37eec8.md).
+- `serve --mcp` tools for agents: `list_target_tools` returns the target's
+  `tools/list` so an agent can pick a tool to probe, `race_check` runs the
+  divergence detector, and `cold_start` times the handshake and the first
+  call separately. Every run tool now returns `failure_reasons`, a list of
+  the signals that failed the run (empty when `passed` is true), plus the
+  shared counters and `notes`. Existing output keys are unchanged.
+- `Report::per_tool` carries per-tool metrics, which the executor already
+  computed for coverage and per-tool SLOs.
+- `mcp_loadtest::report::failure_reasons` exposes the reasons the terminal
+  and Markdown reports print after `FAIL`.
+
 ### Fixed
 
+- OAuth `resource` parameters now carry the protected-resource metadata
+  identifier byte for byte. The client re-serialized it through `url::Url`,
+  which appends `/` to a pathless origin such as `https://mcp.example`, so
+  authorization, token, refresh, and client-credentials requests named a
+  different resource than the server published. Exposed by the new
+  `resource-parameter-matches-prm` check in the official conformance suite.
+  `AuthorizationContext::resource_identifier` returns the exact value.
+- The stdio transport no longer corrupts multi-byte UTF-8 characters that
+  straddle two 8 KiB reads. It decoded each chunk separately, so a Thai or
+  CJK character on a chunk boundary in a long response became U+FFFD, which
+  could also make `race_check` report a false divergence. The reader now
+  collects raw bytes and decodes each line once, which also drops a
+  per-chunk allocation.
 - `[server.env]` and `[server] working_dir` were parsed but never applied, so
   every stdio server (the run session and every pooled session) started with
   the parent's environment and directory. `SpawnOptions` now carries both and
@@ -53,6 +103,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JSON, JUnit, and Prometheus reports remain.
 - Both blocks are also gone from the bundled config schema. Configs that
   still contain them are not rejected; the blocks are ignored.
+- Features outside the concurrency-bug scope, per
+  [ADR 0025](docs/adr/0025-trim-to-detector-surface.md): the `ramp` (with
+  breaking-point analysis), `spike`, `soak`, and `fuzzer` scenarios; the
+  `ws` WebSocket transport; the `cross` subcommand and A-F grading; the
+  `html` report format; the unused Ratatui dashboard; and the
+  `[output.history]` rolling baseline. Configs that use any of them now
+  fail validation, and the GitHub Action rejects `command: cross`. Use
+  `compare` against a stored `metrics.json` for regression gating.
+- `metrics.json` no longer emits `expected_rejection_count`, and the
+  Prometheus output drops the `expected_rejection` outcome label. Only the
+  fuzzer produced them.
+- `Transport::raw_send` and `Session::raw_send`, which only the fuzzer used.
+- Unused dependencies: `ratatui`, `crossterm`, `tokio-tungstenite`,
+  `tokio-stream`, `indicatif`, `futures`, and `ulid` in the CLI.
 
 ## [0.2.0] — Release candidate contents
 
@@ -475,4 +539,5 @@ transport failures, and configured performance thresholds.
   deadlock commit, and criterion microbenchmarks
   (record/histogram/session_loopback/hang_detect).
 
-[Unreleased]: https://github.com/Teerapat-Vatpitak/mcp-loadtest/commits/main
+[Unreleased]: https://github.com/Teerapat-Vatpitak/mcp-loadtest/compare/v0.3.0...main
+[0.3.0]: https://github.com/Teerapat-Vatpitak/mcp-loadtest/compare/v0.2.0...v0.3.0

@@ -26,7 +26,7 @@ impl RemoteHeaders {
     /// Errors mention the header or environment-variable name, never the
     /// resolved secret value. Header values are restricted to RFC 9110-safe
     /// ASCII (plus interior horizontal tab) so they cannot inject a second
-    /// header or be normalized differently by the HTTP and WebSocket stacks.
+    /// header or be normalized differently by the HTTP stack.
     pub fn from_env(references: &BTreeMap<String, String>) -> Result<Self, TransportError> {
         // Validate and case-fold the complete name set before consulting the
         // environment. Callers that construct this map directly (rather than
@@ -256,26 +256,6 @@ mod tests {
                 .is_some_and(HeaderValue::is_sensitive),
             "sensitivity marker must survive request construction"
         );
-
-        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-        let mut ws_request = "wss://example.test/"
-            .into_client_request()
-            .expect("build WebSocket request");
-        for (name, value) in headers.iter() {
-            ws_request.headers_mut().insert(name.clone(), value.clone());
-        }
-        let ws_debug = format!("{ws_request:?}");
-        assert!(
-            !ws_debug.contains("synthetic-test-secret"),
-            "WebSocket Request Debug leaked a sensitive header: {ws_debug}"
-        );
-        assert!(
-            ws_request
-                .headers()
-                .get("Authorization")
-                .is_some_and(HeaderValue::is_sensitive),
-            "sensitivity marker must survive WebSocket request construction"
-        );
     }
 
     #[tokio::test]
@@ -285,7 +265,6 @@ mod tests {
         use super::super::guard::HostGuard;
         use super::super::http::HttpTransport;
         use super::super::sse::SseTransport;
-        use super::super::ws::WsTransport;
 
         const SECRET: &str = "url-password-sentinel";
         let guard = HostGuard::from_config(&ServerConfig::stdio("test".into(), Vec::new()));
@@ -302,14 +281,8 @@ mod tests {
         .await
         .err()
         .expect("SSE userinfo must be rejected");
-        let ws = WsTransport::connect(
-            &format!("wss://operator:{SECRET}@127.0.0.1:9/socket"),
-            &guard,
-        )
-        .await
-        .expect_err("WS userinfo must be rejected");
 
-        for (transport, error) in [("http", http), ("sse", sse), ("ws", ws)] {
+        for (transport, error) in [("http", http), ("sse", sse)] {
             let diagnostic = error.to_string();
             assert!(
                 diagnostic.contains("userinfo"),
@@ -329,7 +302,6 @@ mod tests {
         use super::super::guard::HostGuard;
         use super::super::http::HttpTransport;
         use super::super::sse::SseTransport;
-        use super::super::ws::WsTransport;
 
         let guard = HostGuard::from_config(&ServerConfig::stdio("test".into(), Vec::new()));
         let headers = RemoteHeaders::for_test("Authorization", "Bearer test-secret");
@@ -347,18 +319,11 @@ mod tests {
         .await
         .err()
         .expect("SSE headers over plaintext must be rejected");
-        let ws = WsTransport::connect_with_headers("ws://127.0.0.1:9/socket", &guard, headers)
-            .await
-            .expect_err("WS headers over plaintext must be rejected");
 
-        for (transport, error) in [("http", http), ("sse", sse), ("ws", ws)] {
+        for (transport, error) in [("http", http), ("sse", sse)] {
             let diagnostic = error.to_string();
             assert!(
-                diagnostic.contains(if transport == "ws" {
-                    "wss://"
-                } else {
-                    "https://"
-                }),
+                diagnostic.contains("https://"),
                 "{transport}: wrong pre-I/O rejection: {diagnostic}"
             );
             assert!(

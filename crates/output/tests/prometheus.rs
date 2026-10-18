@@ -67,6 +67,7 @@ fn sample_report() -> Report {
             vec!["echo".to_owned(), "other".to_owned()],
             [("echo".to_owned(), 4)].into_iter().collect(),
         )),
+        per_tool: Default::default(),
     }
 }
 

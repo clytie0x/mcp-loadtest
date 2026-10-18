@@ -40,7 +40,7 @@ fn report_server_identity(
             server.command.clone().unwrap_or_default(),
             server.args.clone(),
         ),
-        "http" | "sse" | "ws" => (
+        "http" | "sse" => (
             sanitize_remote_endpoint(server.url.as_deref().unwrap_or_default()),
             Vec::new(),
         ),
@@ -471,13 +471,14 @@ impl Run {
             trace_path,
             threshold_violations: Vec::new(),
             coverage: Some(coverage),
+            per_tool,
         };
 
         // Evaluate thresholds — global + per-tool SLO entries.
         report.threshold_violations = thresholds::evaluate_thresholds(&config, &report);
         report
             .threshold_violations
-            .extend(thresholds::evaluate_tool_slos(&config, &per_tool));
+            .extend(thresholds::evaluate_tool_slos(&config, &report.per_tool));
 
         // 10. Return Report.
         Ok(report)
@@ -610,11 +611,6 @@ mod tests {
                 "sse",
                 "https://operator:password@mcp.example.test/events?api_key=secret#fragment",
                 "https://mcp.example.test/events?redacted",
-            ),
-            (
-                "ws",
-                "wss://operator:password@mcp.example.test/socket?ticket=secret#fragment",
-                "wss://mcp.example.test/socket?redacted",
             ),
         ] {
             let mut server = ServerConfig::stdio("unused".into(), Vec::new());

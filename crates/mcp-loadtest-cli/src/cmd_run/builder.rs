@@ -13,19 +13,13 @@ use mcp_loadtest::ProtocolVersion;
 use mcp_loadtest::scenario::Scenario;
 use mcp_loadtest::scenario::cold_start::ColdStart;
 use mcp_loadtest::scenario::deadlock_probe::DeadlockProbe;
-use mcp_loadtest::scenario::fuzzer::Fuzzer;
+use mcp_loadtest::scenario::lost_update::LostUpdate;
 use mcp_loadtest::scenario::pattern::PatternScenario;
 use mcp_loadtest::scenario::race_check::RaceCheck;
-use mcp_loadtest::scenario::ramp::Ramp;
-use mcp_loadtest::scenario::soak::Soak;
-use mcp_loadtest::scenario::spike::Spike;
 use mcp_loadtest::scenario::sustained::Sustained;
 use mcp_loadtest::scenario::version_matrix::VersionMatrix;
 
-use super::params::{
-    f64_field, has_pattern_config, parse_breaking_point, parse_dur_field, parse_fuzz_payloads,
-    required_dur_alias, required_str, required_u32_alias, u32_field, u64_field,
-};
+use super::params::{has_pattern_config, parse_dur_field, required_str, u32_field};
 use super::patterns::parse_patterns;
 
 /// Dispatch on the scenario `kind` string from a TOML config, plucking
@@ -92,107 +86,6 @@ pub(crate) fn build_scenario(kind: &str, params: &Value) -> Result<Box<dyn Scena
                 args,
             }))
         }
-        "spike" => {
-            let baseline_concurrent = positive_u32(
-                "baseline_concurrent",
-                u32_field(params, "baseline_concurrent", 5)?,
-            )?;
-            let spike_concurrent = positive_u32(
-                "spike_concurrent",
-                u32_field(params, "spike_concurrent", 50)?,
-            )?;
-            let warmup = parse_dur_field(params.get("warmup"), Duration::from_secs(30))?;
-            let spike_duration = positive_duration(
-                "spike_duration",
-                parse_dur_field(params.get("spike_duration"), Duration::from_secs(30))?,
-            )?;
-            let cooldown = parse_dur_field(params.get("cooldown"), Duration::from_secs(30))?;
-            let tool = required_str(params, "tool")?;
-            let args = params.get("args").cloned().unwrap_or(json!({}));
-            Ok(Box::new(Spike {
-                baseline_concurrent,
-                spike_concurrent,
-                warmup,
-                spike_duration,
-                cooldown,
-                tool,
-                args,
-            }))
-        }
-        "ramp" => {
-            let from_concurrent = positive_u32(
-                "from_concurrent",
-                required_u32_alias(params, &["from_concurrent", "ramp_from", "from"])?,
-            )?;
-            let to_concurrent = positive_u32(
-                "to_concurrent",
-                required_u32_alias(params, &["to_concurrent", "ramp_to", "to"])?,
-            )?;
-            if to_concurrent < from_concurrent {
-                return Err(anyhow!(
-                    "scenario.to_concurrent must be >= scenario.from_concurrent"
-                ));
-            }
-            let step_duration = positive_duration(
-                "step_duration",
-                required_dur_alias(params, &["step_duration", "step", "ramp_step"])?,
-            )?;
-            let step_increment =
-                positive_u32("step_increment", u32_field(params, "step_increment", 1)?)?;
-            let tool = required_str(params, "tool")?;
-            let args = params.get("args").cloned().unwrap_or(json!({}));
-            let breaking_point = parse_breaking_point(params, step_duration)?;
-            Ok(Box::new(Ramp {
-                from_concurrent,
-                to_concurrent,
-                step_duration,
-                step_increment,
-                tool,
-                args,
-                breaking_point,
-            }))
-        }
-        "soak" => {
-            let defaults = Soak::default();
-            let concurrent = positive_u32(
-                "concurrent",
-                u32_field(params, "concurrent", defaults.concurrent)?,
-            )?;
-            if concurrent != 1 {
-                return Err(anyhow!(
-                    "scenario.concurrent: soak currently supports exactly 1; \
-                     use sustained for pooled concurrency"
-                ));
-            }
-            let duration = positive_duration(
-                "duration",
-                parse_dur_field(params.get("duration"), defaults.duration)?,
-            )?;
-            let tool = required_str(params, "tool")?;
-            let args = params.get("args").cloned().unwrap_or(json!({}));
-            let sample_interval = positive_duration(
-                "sample_interval",
-                parse_dur_field(params.get("sample_interval"), defaults.sample_interval)?,
-            )?;
-            let latency_drift_ms_per_sec = f64_field(
-                params,
-                "latency_drift_ms_per_sec",
-                defaults.latency_drift_ms_per_sec,
-            )?;
-            if !latency_drift_ms_per_sec.is_finite() || latency_drift_ms_per_sec < 0.0 {
-                return Err(anyhow!(
-                    "scenario.latency_drift_ms_per_sec must be finite and >= 0"
-                ));
-            }
-            Ok(Box::new(Soak {
-                concurrent,
-                duration,
-                tool,
-                args,
-                sample_interval,
-                latency_drift_ms_per_sec,
-            }))
-        }
         "race_check" => {
             let concurrent = u32_field(params, "concurrent", 10)?;
             if concurrent < 2 {
@@ -208,18 +101,22 @@ pub(crate) fn build_scenario(kind: &str, params: &Value) -> Result<Box<dyn Scena
                 args,
             }))
         }
-        "fuzzer" => {
-            let iterations = positive_u32(
-                "iterations",
-                u32_field(params, "iterations", Fuzzer::default().iterations)?,
-            )?;
-            let seed = u64_field(params, "seed", Fuzzer::default().seed)?;
-            let payloads = parse_fuzz_payloads(params)?;
-            Ok(Box::new(Fuzzer {
-                iterations,
-                seed,
-                payloads,
-            }))
+        "lost_update" => {
+            let plan = LostUpdate {
+                concurrent: u32_field(params, "concurrent", 10)?,
+                writes_per_worker: u32_field(params, "writes_per_worker", 5)?,
+                write_tool: required_str(params, "write_tool")?,
+                write_args: params
+                    .get("write_args")
+                    .cloned()
+                    .ok_or_else(|| anyhow!("scenario.write_args (object) is required"))?,
+                read_tool: required_str(params, "read_tool")?,
+                read_args: params.get("read_args").cloned().unwrap_or(json!({})),
+            };
+            if let Some(message) = plan.validation_error() {
+                return Err(anyhow!("scenario: {message}"));
+            }
+            Ok(Box::new(plan))
         }
         "pattern" => {
             let concurrent = positive_u32("concurrent", u32_field(params, "concurrent", 10)?)?;
@@ -320,23 +217,16 @@ mod tests {
                 json!({"iterations": 2, "tool": "echo"}),
                 "cold_start",
             ),
-            (
-                "spike",
-                json!({"tool": "echo", "warmup": "1ms", "spike_duration": "1ms", "cooldown": "1ms"}),
-                "spike",
-            ),
-            (
-                "ramp",
-                json!({"from_concurrent": 1, "to_concurrent": 2, "step_duration": "1ms", "tool": "echo"}),
-                "ramp",
-            ),
-            (
-                "soak",
-                json!({"tool": "echo", "duration": "1ms", "sample_interval": "1ms"}),
-                "soak",
-            ),
             ("race_check", json!({"tool": "echo"}), "race_check"),
-            ("fuzzer", json!({"iterations": 1}), "fuzzer"),
+            (
+                "lost_update",
+                json!({
+                    "write_tool": "append",
+                    "write_args": {"item": "{marker}"},
+                    "read_tool": "read"
+                }),
+                "lost_update",
+            ),
             (
                 "pattern",
                 json!({
@@ -416,15 +306,6 @@ mod tests {
     }
 
     #[test]
-    fn fuzzer_rejects_unknown_payload_label() {
-        let err = match build_scenario("fuzzer", &json!({"payloads": ["NotARealPayload"]})) {
-            Ok(_) => panic!("unknown payload must error"),
-            Err(err) => err,
-        };
-        assert!(err.to_string().contains("unknown fuzzer payload"));
-    }
-
-    #[test]
     fn rejects_zero_or_impossible_scenario_bounds() {
         let cases = [
             (
@@ -453,39 +334,28 @@ mod tests {
                 ">= 2",
             ),
             (
-                "ramp",
-                json!({
-                    "from_concurrent": 2,
-                    "to_concurrent": 1,
-                    "step_duration": "1s",
-                    "tool": "echo"
-                }),
-                "to_concurrent",
-            ),
-            (
-                "soak",
-                json!({
-                    "concurrent": 1,
-                    "duration": "1s",
-                    "sample_interval": "0s",
-                    "tool": "echo"
-                }),
-                "sample_interval",
-            ),
-            (
-                "soak",
-                json!({
-                    "concurrent": 2,
-                    "duration": "1s",
-                    "sample_interval": "1s",
-                    "tool": "echo"
-                }),
-                "exactly 1",
-            ),
-            (
                 "race_check",
                 json!({"concurrent": 1, "tool": "echo"}),
                 "at least 2",
+            ),
+            (
+                "lost_update",
+                json!({
+                    "write_tool": "append",
+                    "write_args": {"item": "fixed"},
+                    "read_tool": "read"
+                }),
+                "{marker}",
+            ),
+            (
+                "lost_update",
+                json!({
+                    "concurrent": 1,
+                    "write_tool": "append",
+                    "write_args": {"item": "{marker}"},
+                    "read_tool": "read"
+                }),
+                "concurrent",
             ),
             (
                 "pattern",
@@ -495,7 +365,6 @@ mod tests {
                 }),
                 "duration",
             ),
-            ("fuzzer", json!({"iterations": 0}), "iterations"),
             (
                 "version_matrix",
                 json!({"calls_per_version": 0, "tool": "echo"}),

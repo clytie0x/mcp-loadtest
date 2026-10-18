@@ -19,8 +19,8 @@ exclude = [
     "CLAUDE.md",
 ]
 
-# docs.rs builds with all features so the feature-gated `serve` / `tui`
-# modules render in the published API docs.
+# docs.rs builds with all features so the feature-gated `serve`
+# module renders in the published API docs.
 [package.metadata.docs.rs]
 all-features = true
 
@@ -28,22 +28,18 @@ all-features = true
 workspace = true
 
 [features]
-# Library-only consumers get a slim build (no MCP-server mode, no TUI).
-# The CLI binary opts in to both — see crates/mcp-loadtest-cli/Cargo.toml.
+# Library-only consumers get a slim build (no MCP-server mode).
+# The CLI binary opts in — see crates/mcp-loadtest-cli/Cargo.toml.
 default = []
 # Self-hosted MCP server mode (`mcp-loadtest serve --mcp`). Gates the
 # `pub mod serve` declaration in lib.rs. See ADR 0005.
 serve = []
-# Live-polling Ratatui dashboard. Forwards to the output crate's `tui`
-# feature (which activates `ratatui` + `crossterm`) and re-exports its `tui`
-# module from lib.rs.
-tui = ["mcp-loadtest-output/tui"]
 
 [dependencies]
-mcp-loadtest-core = { path = "../core", version = "0.2.0" }
-mcp-loadtest-protocol = { path = "../protocol", version = "0.2.0" }
-mcp-loadtest-engine = { path = "../engine", version = "0.2.0" }
-mcp-loadtest-output = { path = "../output", version = "0.2.0" }
+mcp-loadtest-core = { path = "../core", version = "0.3.0" }
+mcp-loadtest-protocol = { path = "../protocol", version = "0.3.0" }
+mcp-loadtest-engine = { path = "../engine", version = "0.3.0" }
+mcp-loadtest-output = { path = "../output", version = "0.3.0" }
 # The crate is a thin re-export facade over the four workspace crates above.
 # The only direct deps are what the feature-gated `serve` module uses (verified
 # by grep: serve/ imports tokio, serde_json, thiserror and nothing else).
@@ -55,3 +51,7 @@ thiserror = { workspace = true }
 # `smoke.rs` / `serve_smoke.rs` drive the built binary over async stdio; both
 # use only tokio + serde_json (the latter comes from the normal deps above).
 tokio = { workspace = true }
+
+[[test]]
+name = "serve_tools"
+required-features = ["serve"]

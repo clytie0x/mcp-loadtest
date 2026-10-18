@@ -1,6 +1,6 @@
 [package]
 name = "mcp-loadtest-protocol"
-description = "MCP wire protocol, transports (stdio/http/sse/ws), session, hang detector"
+description = "MCP wire protocol, transports (stdio/http/sse), session, hang detector"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,12 +12,10 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
-mcp-loadtest-core = { path = "../core", version = "0.2.0" }
-mcp-loadtest-auth = { path = "../auth", version = "0.2.0" }
+mcp-loadtest-core = { path = "../core", version = "0.3.0" }
+mcp-loadtest-auth = { path = "../auth", version = "0.3.0" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-tokio-stream = { workspace = true }
-tokio-tungstenite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

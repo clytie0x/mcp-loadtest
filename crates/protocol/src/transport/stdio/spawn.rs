@@ -1,6 +1,6 @@
 //! Process spawn + stderr-mode wiring for [`StdioTransport`].
 //!
-//! Split out of `stdio/mod.rs` so the wire path (request/notify/raw_send +
+//! Split out of `stdio/mod.rs` so the wire path (request/notify +
 //! Drop) and the spawn path each stay under the 300-line production
 //! convention. See ADR 0013.
 
@@ -124,7 +124,7 @@ impl StdioTransport {
             child: Some(child),
             stdin: Some(stdin),
             stdout: BufReader::new(stdout),
-            line_buf: String::new(),
+            line_buf: Vec::new(),
             stderr_pump,
             pump_cancel,
         })

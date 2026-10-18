@@ -12,11 +12,10 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
-mcp-loadtest-core = { path = "../core", version = "0.2.0" }
-mcp-loadtest-protocol = { path = "../protocol", version = "0.2.0" }
+mcp-loadtest-core = { path = "../core", version = "0.3.0" }
+mcp-loadtest-protocol = { path = "../protocol", version = "0.3.0" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 async-trait = { workspace = true }
@@ -24,7 +23,7 @@ sysinfo = { workspace = true }
 rand = { workspace = true }
 ulid = { workspace = true }
 tracing = { workspace = true }
-mcp-loadtest-auth = { path = "../auth", version = "0.2.0" }
+mcp-loadtest-auth = { path = "../auth", version = "0.3.0" }
 url = { workspace = true }
 
 [dev-dependencies]

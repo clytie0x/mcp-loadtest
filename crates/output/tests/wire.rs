@@ -63,6 +63,7 @@ fn sample_report() -> Report {
             actual: "0.10".to_owned(),
         }],
         coverage: None,
+        per_tool: Default::default(),
     }
 }
 

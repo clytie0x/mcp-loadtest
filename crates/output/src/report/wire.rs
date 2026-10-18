@@ -47,15 +47,15 @@ pub struct MetricsDocumentV1 {
     /// Response-divergence count. Omitted when zero for v1 compatibility.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub divergence_count: u64,
+    /// Acknowledged writes missing from the read-back state. Omitted when zero.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub lost_update_count: u64,
     /// Incomplete pooled-worker count. Omitted when zero.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub incomplete_worker_count: u64,
     /// Failed or timed-out teardown count. Omitted when zero.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub teardown_failure_count: u64,
-    /// Expected protocol-fuzzer rejection count. Omitted when zero.
-    #[serde(default, skip_serializing_if = "is_zero_u64")]
-    pub expected_rejection_count: u64,
     /// Trace artifact path, when tracing was requested.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trace_path: Option<String>,
@@ -99,9 +99,9 @@ impl From<&Report> for MetricsDocumentV1 {
             deadlock_count: report.scenario_outcome.deadlock_count,
             hang_count: report.scenario_outcome.hang_count,
             divergence_count: report.scenario_outcome.divergence_count,
+            lost_update_count: report.scenario_outcome.lost_update_count,
             incomplete_worker_count: report.scenario_outcome.incomplete_worker_count,
             teardown_failure_count: report.scenario_outcome.teardown_failure_count,
-            expected_rejection_count: report.metrics.outcomes.expected_rejection,
             trace_path: report
                 .trace_path
                 .as_ref()
@@ -191,7 +191,7 @@ impl From<&LatencyStats> for LatencyDocumentV1 {
 pub struct ThroughputDocumentV1 {
     /// Total requests observed by the recorder.
     pub total_requests: u64,
-    /// Successful requests, including expected fuzzer rejections.
+    /// Successful requests.
     pub successful_requests: u64,
     /// Mean requests per second.
     pub requests_per_sec: f64,

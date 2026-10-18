@@ -25,6 +25,11 @@ pub struct ScenarioOutcome {
     /// defaults to zero when older reports are deserialized.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub divergence_count: u64,
+    /// Acknowledged writes missing from the state read back afterwards
+    /// (`lost_update` scenario). Like `divergence_count`, any non-zero value
+    /// fails the run; omitted from JSON when zero.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub lost_update_count: u64,
     /// Requested pooled workers that never completed their assigned workload.
     ///
     /// Spawn failures, cancelled spawns and worker-task failures increment

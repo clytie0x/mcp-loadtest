@@ -51,7 +51,7 @@ fn path_text(path: &Path) -> String {
 }
 
 #[test]
-fn action_mode_redacts_deadlock_cross_and_doctor_process_output() {
+fn action_mode_redacts_deadlock_and_doctor_process_output() {
     let temp = tempdir().expect("tempdir");
     let output_dir = path_text(temp.path());
     let server = format!("no-such-action-binary --token {SENTINEL}");
@@ -71,18 +71,6 @@ fn action_mode_redacts_deadlock_cross_and_doctor_process_output() {
         "--action-redact-server-identity",
     ]);
     assert_redacted(&deadlock, &server);
-
-    let cross = run_cli(&[
-        "cross",
-        "--server",
-        &server,
-        "--duration",
-        "1ms",
-        "--output-dir",
-        &output_dir,
-        "--action-redact-server-identity",
-    ]);
-    assert_redacted(&cross, &server);
 
     let doctor = run_cli(&[
         "doctor",
@@ -111,18 +99,4 @@ fn action_mode_redacts_malformed_tool_args_from_parse_errors() {
         "--action-redact-server-identity",
     ]);
     assert_no_sentinel(&deadlock, ARGS_SENTINEL);
-
-    let cross = run_cli(&[
-        "cross",
-        "--server",
-        "safe-unused-command",
-        "--args",
-        ARGS_SENTINEL,
-        "--duration",
-        "1ms",
-        "--output-dir",
-        &output_dir,
-        "--action-redact-server-identity",
-    ]);
-    assert_no_sentinel(&cross, ARGS_SENTINEL);
 }

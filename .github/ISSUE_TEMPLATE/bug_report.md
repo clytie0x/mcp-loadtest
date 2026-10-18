@@ -25,7 +25,7 @@ assignees: []
 - `rustc --version`:
 - `mcp-loadtest --version`:
 - Target MCP server (command + commit hash if applicable):
-- Transport (stdio / http / sse / ws):
+- Transport (stdio / http / sse):
 
 ## Reproducer
 

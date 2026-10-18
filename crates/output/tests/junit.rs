@@ -56,6 +56,7 @@ fn report(passed: bool) -> Report {
             }]
         },
         coverage: None,
+        per_tool: Default::default(),
     }
 }
 

@@ -7,7 +7,7 @@
 //!
 //! Why a **pre-clap** `std::env::args()` scan rather than a clap flag the
 //! dispatcher reads: several subcommands have *required* args (`run
-//! --config`, `cross --server`). A subcommand-local `--explain` would never
+//! --config`, `deadlock-probe --server`). A subcommand-local `--explain` would never
 //! be reached — clap rejects the parse for the missing required arg before
 //! any handler runs. So `main` calls [`maybe_handle_explain`] **before**
 //! `Cli::parse()`. A `#[arg(long, global = true)] explain` is still
@@ -47,7 +47,6 @@ fn explanation_for(subcommand: Option<&str>) -> &'static str {
         Some("run") => RUN,
         Some("compare") => COMPARE,
         Some("replay") => REPLAY,
-        Some("cross") => CROSS,
         Some("serve") => SERVE,
         Some("example-config") => EXAMPLE_CONFIG,
         Some("list-scenarios") => LIST_SCENARIOS,
@@ -91,9 +90,9 @@ What it does:
 
 Algorithm:
   1. Parse --config (TOML). Reject malformed / invalid configs up front.
-  2. Build the `[scenario].type` scenario (sustained / ramp / soak / spike /
-     pattern / race_check / fuzzer / deadlock_probe / cold_start).
-  3. Spawn / connect the server (stdio child, or http / sse / ws — outbound
+  2. Build the `[scenario].type` scenario (sustained / pattern /
+     race_check / lost_update / deadlock_probe / cold_start / version_matrix).
+  3. Spawn / connect the server (stdio child, or http / sse — outbound
      network targets pass the SSRF host-allowlist first; see ADR 0012).
   4. Run `initialize` + `tools/list`, then execute the scenario.
   5. Aggregate metrics, render the configured `[output].formats`.
@@ -146,34 +145,24 @@ Tunable knobs: --server, --url, --transport (stdio|http|sse|ws),
   --allow-host (SSRF allowlist for URL transports, repeatable; ADR 0012).
 ";
 
-const CROSS: &str = "\
-What it does:
-  Runs the *same* workload against N servers and prints a side-by-side
-  comparison — e.g. an old vs. new implementation of the same MCP server.
-
-Algorithm:
-  1. For each --server: parse the command, spawn it, run the chosen
-     scenario (`sustained` or `deadlock_probe`) for --duration.
-  2. Collect each server's metrics into its own runs/<id>/ dir.
-  3. Render a side-by-side table to stdout (the comparison itself is not
-     written to disk; the per-server artifacts are).
-
-Tunable knobs: --server (repeat once per server), --tool, --args,
-  --duration, --scenario, --output-dir.
-";
-
 const SERVE: &str = "\
 What it does:
   Exposes mcp-loadtest itself AS an MCP server over stdio, so an MCP-aware
-  agent (Claude Code, Cursor, …) can drive load tests by calling tools
-  (`deadlock_probe`, `sustained_load`, `compare_runs`, `report_summary`,
-  `list_recent_runs`) — no human-in-the-loop to spawn a child and parse
-  stdout.
+  agent (Claude Code, Cursor, …) can probe a server by calling tools —
+  no human-in-the-loop to spawn a child and parse stdout:
+    list_target_tools  the target's tools/list (call first)
+    deadlock_probe     synchronized calls, hang/deadlock classification
+    race_check         identical synchronized calls, divergence check
+    lost_update        uniquely-marked concurrent writes, read-back check
+    cold_start         handshake and first-call timing per fresh server
+    sustained_load     steady load, latency and error rate
+    compare_runs       diff two metrics.json reports
 
 Algorithm:
   1. Speak the MCP protocol over stdio (the default and only serve mode).
-  2. On each tool call, run the corresponding load test and return
-     structured JSON.
+  2. On each tool call, run the corresponding scenario and return JSON in
+     structuredContent. Every run tool returns `passed` and
+     `failure_reasons` (empty when it passed).
 
 Tunable knobs: --mcp (stdio; HTTP/SSE serve modes are deferred).
 See DESIGN.md §21.2 for the tool catalogue.
@@ -222,7 +211,6 @@ Pass --explain after any subcommand for a description of that subcommand:
   deadlock-probe   probe for the Vibe-Trading-bug-class deadlock
   compare          diff two metrics.json reports (a CI regression gate)
   replay           re-send a recorded trace and diff the responses
-  cross            run one workload against N servers, side-by-side
   serve            expose mcp-loadtest itself as an MCP server (--mcp)
   example-config   print a known-good TOML config template
   list-scenarios   list the built-in scenario kinds
@@ -273,7 +261,6 @@ mod tests {
             "deadlock-probe",
             "compare",
             "replay",
-            "cross",
             "serve",
             "example-config",
             "list-scenarios",

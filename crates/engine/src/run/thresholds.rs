@@ -152,7 +152,7 @@ const MIN_RSS_SLOPE_SAMPLES: usize = 3;
 
 /// Evaluate the `rss_leak_mb_per_sec` threshold: fit a least-squares line
 /// to the chronological `(at_secs, rss_mb)` timeseries via
-/// [`crate::scenario::soak::detect_leak`] and push a violation when the
+/// [`crate::leak_detect::detect_leak`] and push a violation when the
 /// slope exceeds `max_slope` MB/s.
 ///
 /// `at_secs` offsets are relative to sampler start rather than to the
@@ -215,7 +215,7 @@ fn check_rss_slope(
     let series: Vec<(f64, f64)> = samples.iter().map(|s| (s.at_secs, s.rss_mb)).collect();
     // `detect_leak` returns None when every timestamp coincides (zero time
     // span) — a slope can't be fitted to a vertical line.
-    let Some(slope) = crate::scenario::soak::detect_leak(&series) else {
+    let Some(slope) = crate::leak_detect::detect_leak(&series) else {
         push_unavailable_process_violation(
             expected,
             "unavailable: process RSS samples have no usable time span".to_owned(),
@@ -382,6 +382,7 @@ mod tests {
             trace_path: None,
             threshold_violations: Vec::new(),
             coverage: None,
+            per_tool: Default::default(),
         }
     }
 
