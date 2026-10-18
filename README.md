@@ -40,6 +40,29 @@ The repository includes a
 [regression test](crates/engine/tests/vibe_trading_regression.rs) pinned to the
 affected revision.
 
+Concurrent writers can also overwrite each other while every call reports
+success. `lost-update` gives each write a unique marker and checks that one
+read returns all of them:
+
+```bash
+mcp-loadtest lost-update \
+  --server "npx -y @modelcontextprotocol/server-memory@2026.8.31" \
+  --env MEMORY_FILE_PATH=/tmp/probe.jsonl --startup-timeout 60s \
+  --write-tool create_entities \
+  --write-args '{"entities":[{"name":"{marker}","entityType":"probe","observations":[]}]}' \
+  --read-tool read_graph
+```
+
+```text
+Status: FAIL (36 lost updates)
+Error: lost-update failed — 36 lost updates; 53/53 successful calls; see report
+```
+
+Every call succeeded, and 36 of 50 writes were gone. See
+[field results](docs/field-results.md) for this server and
+mcp-knowledge-graph, and `race-check` for different answers to identical
+calls.
+
 ## Install
 
 After the immutable `v0.3.0` GitHub Release and its checksums exist, download

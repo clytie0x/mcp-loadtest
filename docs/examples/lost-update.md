@@ -65,6 +65,18 @@ are the control write and read, 40 concurrent writes, and the final read.
 With `@modelcontextprotocol/server-memory@1.0.0`, the same config passes
 with 0 lost updates.
 
+Without a config file, the `lost-update` subcommand takes the same settings
+as flags:
+
+```bash
+mcp-loadtest lost-update \
+  --server "npx -y @modelcontextprotocol/server-memory@2026.8.31" \
+  --env MEMORY_FILE_PATH=/tmp/lost-update-probe.jsonl --startup-timeout 60s \
+  --write-tool create_entities \
+  --write-args '{"entities":[{"name":"{marker}","entityType":"probe","observations":["w{worker}s{seq}"]}]}' \
+  --read-tool read_graph --concurrent 8 --writes-per-worker 5
+```
+
 ## Reading the result
 
 | Outcome | Meaning |

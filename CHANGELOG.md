@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `race-check` and `lost-update` subcommands run those detectors without a
+  config file, like `deadlock-probe`. Both take `--env KEY=VALUE` and
+  `--startup-timeout`, write the usual reports, and exit non-zero with the
+  failure reasons.
 - `serve --mcp` tools that spawn the target accept `env`, `working_dir`, and
   `startup_timeout_ms`. An agent can now probe servers that read their
   configuration from the environment (a data file path, an API key) and
