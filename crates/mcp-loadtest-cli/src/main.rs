@@ -171,6 +171,70 @@ pub(crate) enum Cmd {
         action_redact_server_identity: bool,
     },
 
+    /// Response-divergence check: N sessions send one identical call at the
+    /// same instant; any difference between the responses fails.
+    RaceCheck {
+        /// Server command, parsed shell-style: `"python -m my_mcp"`.
+        #[arg(short, long)]
+        server: String,
+        /// Tool name to call. Use a tool that should answer identical inputs
+        /// identically.
+        #[arg(long)]
+        tool: String,
+        /// Number of synchronized independent sessions (at least 2).
+        #[arg(long, default_value_t = 10)]
+        concurrent: u32,
+        /// Tool arguments as a JSON object.
+        #[arg(long, default_value = "{}")]
+        args: String,
+        /// Extra `KEY=VALUE` environment for every server process (repeatable).
+        #[arg(long = "env", value_name = "KEY=VALUE")]
+        env: Vec<String>,
+        /// Initialize budget per session (humantime: `10s`, `1m`, ...).
+        #[arg(long, default_value = "10s")]
+        startup_timeout: String,
+        /// Where to write the per-run dir.
+        #[arg(long, default_value = "./runs")]
+        output_dir: PathBuf,
+    },
+
+    /// Lost-update check: N sessions send uniquely-marked writes at once, then
+    /// one read must return every acknowledged write. Writes are real: point
+    /// it at a disposable store.
+    LostUpdate {
+        /// Server command, parsed shell-style: `"python -m my_mcp"`.
+        #[arg(short, long)]
+        server: String,
+        /// Tool that records one write.
+        #[arg(long)]
+        write_tool: String,
+        /// Write arguments as a JSON object. A string value must contain
+        /// `{marker}`; `{worker}` and `{seq}` are also substituted.
+        #[arg(long)]
+        write_args: String,
+        /// Tool whose result must contain every acknowledged marker.
+        #[arg(long)]
+        read_tool: String,
+        /// Read arguments as a JSON object.
+        #[arg(long, default_value = "{}")]
+        read_args: String,
+        /// Independent sessions writing at once (at least 2).
+        #[arg(long, default_value_t = 10)]
+        concurrent: u32,
+        /// Writes each session sends.
+        #[arg(long, default_value_t = 5)]
+        writes_per_worker: u32,
+        /// Extra `KEY=VALUE` environment for every server process (repeatable).
+        #[arg(long = "env", value_name = "KEY=VALUE")]
+        env: Vec<String>,
+        /// Initialize budget per session (humantime: `10s`, `1m`, ...).
+        #[arg(long, default_value = "10s")]
+        startup_timeout: String,
+        /// Where to write the per-run dir.
+        #[arg(long, default_value = "./runs")]
+        output_dir: PathBuf,
+    },
+
     /// Expose mcp-loadtest itself AS an MCP server over stdio.
     ///
     /// Lets AI agents (Claude Code, Cursor, ...) probe servers by calling
