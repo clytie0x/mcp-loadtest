@@ -211,8 +211,8 @@ official client conformance matrix is documented in
 
 ## Documentation
 
-- [Cookbook examples](docs/examples/) — CI integration, custom scenarios, and
-  deadlock debugging
+- [Cookbook examples](docs/examples/) — CI integration, custom scenarios,
+  deadlock debugging, and finding lost updates
 - [DESIGN.md](DESIGN.md) — architecture, behavior, and product positioning
 - [Architecture decisions](docs/adr/) — security and implementation rationale
 - [Metrics schema](docs/schema/metrics.v1.json) — versioned JSON report contract
