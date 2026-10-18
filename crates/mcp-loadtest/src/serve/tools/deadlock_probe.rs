@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use crate::scenario::deadlock_probe::DeadlockProbe;
 
-use super::{ToolError, required_str, run_stdio, run_target, u32_arg, verdict};
+use super::{ToolError, required_str, run_scenario, run_target, u32_arg, verdict};
 
 pub(super) fn deadlock_probe_def() -> Value {
     json!({
@@ -75,7 +75,7 @@ pub(super) async fn deadlock_probe(args: &Value) -> Result<Value, ToolError> {
         tool,
         args: args.get("args").cloned().unwrap_or(json!({})),
     };
-    let report = run_stdio(&target, "deadlock_probe", Box::new(scenario)).await?;
+    let report = run_scenario(&target, "deadlock_probe", Box::new(scenario)).await?;
 
     let mut out = verdict(&report, &target);
     out.insert(

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `serve --mcp` tools can target a remote server: pass `server_url` (with
+  optional `transport`, `allowed_hosts`, and `headers_from_env`) instead of
+  `server_command`. Remote targets go through the same SSRF guard, header,
+  and OAuth handling as a config file. `lost_update` over HTTP is the
+  natural case, with one server process and many sessions sharing its
+  memory. The library gains `run::open_session` to open one session the way
+  a run does.
 - `serve --mcp` tools that spawn the target accept `env`, `working_dir`, and
   `startup_timeout_ms`. An agent can now probe servers that read their
   configuration from the environment (a data file path, an API key) and

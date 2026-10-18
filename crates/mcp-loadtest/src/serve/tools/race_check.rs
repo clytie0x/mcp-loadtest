@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 use crate::scenario::race_check::RaceCheck;
 
-use super::{ToolError, required_str, run_stdio, run_target, u32_arg, verdict};
+use super::{ToolError, required_str, run_scenario, run_target, u32_arg, verdict};
 
 pub(super) fn race_check_def() -> Value {
     json!({
@@ -34,7 +34,7 @@ pub(super) fn race_check_def() -> Value {
                     "type": "integer",
                     "minimum": 2,
                     "default": 10,
-                    "description": "Number of synchronized sessions (each its own server process)."
+                    "description": "Number of synchronized sessions (with server_command, each is its own server process)."
                 },
                 "args": {
                     "type": "object",
@@ -60,7 +60,7 @@ pub(super) async fn race_check(args: &Value) -> Result<Value, ToolError> {
         tool,
         args: args.get("args").cloned().unwrap_or(json!({})),
     };
-    let report = run_stdio(&target, "race_check", Box::new(scenario)).await?;
+    let report = run_scenario(&target, "race_check", Box::new(scenario)).await?;
 
     let mut out = verdict(&report, &target);
     out.insert(

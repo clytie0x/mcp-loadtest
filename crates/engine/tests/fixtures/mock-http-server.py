@@ -7,6 +7,11 @@ POST / accepts a JSON-RPC request body and returns the response as
 Stdlib only. Bind to 127.0.0.1:<port>; emit one stdout line
 `LISTENING: 127.0.0.1:<port>` (with the OS-assigned port when --port 0)
 so test harnesses can read where to connect.
+
+With --store racy|safe it also serves `append {item}` and `read`, backed by
+one in-memory list shared by every client. `racy` copies the list, pauses,
+and writes the copy back, so concurrent appends overwrite each other;
+`safe` appends under a lock.
 """
 
 import argparse
@@ -15,7 +20,48 @@ import signal
 import socketserver
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+STORE_MODE = None
+ITEMS = []
+ITEMS_LOCK = threading.Lock()
+
+STORE_TOOLS = [
+    {
+        "name": "append",
+        "description": "Append one item to the shared store.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"item": {"type": "string"}},
+            "required": ["item"],
+        },
+    },
+    {
+        "name": "read",
+        "description": "Return every stored item, one per line.",
+        "inputSchema": {"type": "object"},
+    },
+]
+
+
+def store_call(name, args):
+    """Run a store tool; returns the result text, or None for other tools."""
+    global ITEMS
+    if name == "append":
+        item = str(args.get("item", ""))
+        if STORE_MODE == "racy":
+            snapshot = list(ITEMS)
+            time.sleep(0.02)
+            snapshot.append(item)
+            ITEMS = snapshot
+        else:
+            with ITEMS_LOCK:
+                ITEMS.append(item)
+        return "ok"
+    if name == "read":
+        return "\n".join(ITEMS)
+    return None
 
 
 def dispatch(msg):
@@ -47,10 +93,19 @@ def dispatch(msg):
                         "inputSchema": {"type": "object"},
                     }
                 ]
+                + (STORE_TOOLS if STORE_MODE else [])
             },
         }
     if method == "tools/call":
-        args = msg.get("params", {}).get("arguments", {})
+        params = msg.get("params", {})
+        args = params.get("arguments", {})
+        text = store_call(params.get("name"), args) if STORE_MODE else None
+        if text is not None:
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {"content": [{"type": "text", "text": text}]},
+            }
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
@@ -113,7 +168,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--store", choices=["racy", "safe"])
     args = parser.parse_args()
+    global STORE_MODE
+    STORE_MODE = args.store
 
     server = _Server((args.host, args.port), Handler)
     host, port = server.server_address[0], server.server_address[1]

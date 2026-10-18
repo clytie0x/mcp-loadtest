@@ -31,7 +31,6 @@ use std::time::Duration;
 use serde_json::{Map, Value, json};
 use thiserror::Error;
 
-use crate::SpawnOptions;
 use crate::config::{self, Config, OutputConfig, ScenarioConfig, ServerConfig};
 use crate::report::{Report, failure_reasons};
 use crate::run::Run;
@@ -92,7 +91,7 @@ pub fn tool_defs() -> Vec<Value> {
     let mut defs = vec![list_target_tools::list_target_tools_def()];
     defs.extend(run_tools);
     for def in &mut defs {
-        add_stdio_target_properties(&mut def["inputSchema"]["properties"]);
+        add_target_properties(&mut def["inputSchema"]);
     }
     defs.push(compare_runs::compare_runs_def());
     defs
@@ -114,26 +113,59 @@ pub async fn dispatch(name: &str, arguments: &Value) -> Result<Value, ToolError>
 
 // ---- shared helpers -----------------------------------------------------
 
-/// Schema for the optional stdio settings [`stdio_target`] reads.
-fn add_stdio_target_properties(properties: &mut Value) {
+/// Schema for the target settings [`target`] reads, and the rule that a
+/// tool takes either `server_command` or `server_url`.
+fn add_target_properties(schema: &mut Value) {
+    let properties = &mut schema["properties"];
+    properties["server_url"] = json!({
+        "type": "string",
+        "description": "Remote MCP endpoint, instead of server_command (e.g. \
+                        \"https://mcp.example.com/mcp\"). Every session connects to it."
+    });
+    properties["transport"] = json!({
+        "type": "string",
+        "enum": ["http", "sse"],
+        "default": "http",
+        "description": "Remote transport for server_url: streamable HTTP or legacy SSE."
+    });
+    properties["allowed_hosts"] = json!({
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Bare hostnames server_url may reach. Required for loopback and \
+                        private addresses, which are blocked by default (SSRF guard)."
+    });
+    properties["headers_from_env"] = json!({
+        "type": "object",
+        "additionalProperties": { "type": "string" },
+        "description": "Request headers for server_url, each read from the named \
+                        environment variable of this server (e.g. \
+                        {\"Authorization\": \"TARGET_AUTH\"}). Needs https except on loopback."
+    });
     properties["env"] = json!({
         "type": "object",
         "additionalProperties": { "type": "string" },
-        "description": "Extra environment variables for every server process, merged into \
-                        this server's environment (e.g. a data file path or an API key)."
+        "description": "server_command only: extra environment variables for every server \
+                        process, merged into this server's environment."
     });
     properties["working_dir"] = json!({
         "type": "string",
-        "description": "Working directory for every server process. Defaults to this server's."
+        "description": "server_command only: working directory for every server process."
     });
     properties["startup_timeout_ms"] = json!({
         "type": "integer",
         "minimum": 1,
         "maximum": MAX_STARTUP_TIMEOUT_MS,
         "default": 10000,
-        "description": "Budget for each server's initialize handshake. Raise it for servers \
+        "description": "Budget for each session's initialize handshake. Raise it for servers \
                         that download or compile on first start (e.g. npx, uvx)."
     });
+    properties["server_command"]["description"] = json!(
+        "Shell-split command that starts the server over stdio (e.g. \"python -m my_mcp\"). \
+         Give exactly one of server_command or server_url."
+    );
+    if let Some(required) = schema["required"].as_array_mut() {
+        required.retain(|r| r != "server_command");
+    }
 }
 
 pub(super) fn required_str(args: &Value, key: &str) -> Result<String, ToolError> {
@@ -157,49 +189,52 @@ pub(super) fn u32_arg(args: &Value, key: &str, default: u32) -> Result<u32, Tool
     }
 }
 
-/// How to start the target over stdio: the command plus the optional
-/// environment, working directory, and startup budget every tool that
-/// spawns it accepts.
-pub(super) struct StdioTarget {
-    command: String,
-    args: Vec<String>,
-    env: BTreeMap<String, String>,
-    working_dir: Option<PathBuf>,
-    startup_timeout: Duration,
+/// The server under test: either a command spawned over stdio
+/// (`server_command`, with optional `env` and `working_dir`) or a remote
+/// endpoint (`server_url`, with optional `transport`, `allowed_hosts`, and
+/// `headers_from_env`). Both take `startup_timeout_ms`.
+pub(super) struct Target {
+    server: ServerConfig,
 }
 
 /// Longest `startup_timeout_ms` an agent may ask for.
 const MAX_STARTUP_TIMEOUT_MS: u64 = 600_000;
 
-/// Read `server_command` (required) plus the optional `env`, `working_dir`,
-/// and `startup_timeout_ms`.
-pub(super) fn stdio_target(args: &Value) -> Result<StdioTarget, ToolError> {
-    let (command, cmd_args) = split_server_command(&required_str(args, "server_command")?)?;
-    let env = match args.get("env") {
-        None => BTreeMap::new(),
-        Some(Value::Object(vars)) => vars
-            .iter()
-            .map(|(key, value)| {
-                if key.is_empty() || key.contains(['=', '\0']) {
-                    return Err(ToolError::InvalidArgs(format!(
-                        "env name {key:?} must be non-empty without '=' or NUL"
-                    )));
-                }
-                match value.as_str() {
-                    Some(v) if !v.contains('\0') => Ok((key.clone(), v.to_owned())),
-                    _ => Err(ToolError::InvalidArgs(format!(
-                        "env value for {key} must be a string without NUL"
-                    ))),
-                }
-            })
-            .collect::<Result<_, _>>()?,
-        Some(_) => {
+/// Read the target arguments and validate them as a server config, so bad
+/// input is rejected before any process starts or connection opens.
+pub(super) fn target(args: &Value) -> Result<Target, ToolError> {
+    let mut server = match (args.get("server_command"), args.get("server_url")) {
+        (Some(_), None) => stdio_server(args)?,
+        (None, Some(_)) => remote_server(args)?,
+        _ => {
             return Err(ToolError::InvalidArgs(
-                "env must be an object of string values".into(),
+                "exactly one of server_command or server_url is required".into(),
             ));
         }
     };
-    let working_dir = match args.get("working_dir") {
+    if let Some(v) = args.get("startup_timeout_ms") {
+        server.startup_timeout = match v.as_u64() {
+            Some(ms @ 1..=MAX_STARTUP_TIMEOUT_MS) => Duration::from_millis(ms),
+            _ => {
+                return Err(ToolError::InvalidArgs(format!(
+                    "startup_timeout_ms must be an integer in 1..={MAX_STARTUP_TIMEOUT_MS}"
+                )));
+            }
+        };
+    }
+    Config::new(server.clone(), ScenarioConfig::new("sustained", json!({})))
+        .validate()
+        .map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+    Ok(Target { server })
+}
+
+fn stdio_server(args: &Value) -> Result<ServerConfig, ToolError> {
+    let (command, cmd_args) = split_server_command(&required_str(args, "server_command")?)?;
+    let mut server = ServerConfig::stdio(command, cmd_args);
+    server.env = string_map(args, "env", |key| {
+        !key.is_empty() && !key.contains(['=', '\0'])
+    })?;
+    server.working_dir = match args.get("working_dir") {
         None => None,
         Some(v) => match v.as_str() {
             Some(dir) if !dir.trim().is_empty() => Some(PathBuf::from(dir)),
@@ -210,55 +245,105 @@ pub(super) fn stdio_target(args: &Value) -> Result<StdioTarget, ToolError> {
             }
         },
     };
-    let startup_timeout = match args.get("startup_timeout_ms") {
-        None => ServerConfig::stdio(String::new(), Vec::new()).startup_timeout,
-        Some(v) => match v.as_u64() {
-            Some(ms @ 1..=MAX_STARTUP_TIMEOUT_MS) => Duration::from_millis(ms),
+    Ok(server)
+}
+
+fn remote_server(args: &Value) -> Result<ServerConfig, ToolError> {
+    for key in ["env", "working_dir"] {
+        if args.get(key).is_some() {
+            return Err(ToolError::InvalidArgs(format!(
+                "{key} applies only to server_command"
+            )));
+        }
+    }
+    let url = required_str(args, "server_url")?;
+    let transport = match args.get("transport") {
+        None => "http".to_owned(),
+        Some(v) => match v.as_str() {
+            Some(t @ ("http" | "sse")) => t.to_owned(),
             _ => {
-                return Err(ToolError::InvalidArgs(format!(
-                    "startup_timeout_ms must be an integer in 1..={MAX_STARTUP_TIMEOUT_MS}"
-                )));
+                return Err(ToolError::InvalidArgs(
+                    "transport must be \"http\" or \"sse\"".into(),
+                ));
             }
         },
     };
-    Ok(StdioTarget {
-        command,
-        args: cmd_args,
-        env,
-        working_dir,
-        startup_timeout,
-    })
+    let allowed_hosts = match args.get("allowed_hosts") {
+        None => Vec::new(),
+        Some(Value::Array(hosts)) => hosts
+            .iter()
+            .map(|h| {
+                h.as_str().map(str::to_owned).ok_or_else(|| {
+                    ToolError::InvalidArgs("allowed_hosts must be an array of strings".into())
+                })
+            })
+            .collect::<Result<_, _>>()?,
+        Some(_) => {
+            return Err(ToolError::InvalidArgs(
+                "allowed_hosts must be an array of strings".into(),
+            ));
+        }
+    };
+    let mut server = ServerConfig::stdio(String::new(), Vec::new());
+    server.command = None;
+    server.url = Some(url);
+    server.transport = transport;
+    server.allowed_hosts = allowed_hosts;
+    server.headers_from_env = string_map(args, "headers_from_env", |name| !name.is_empty())?;
+    Ok(server)
 }
 
-impl StdioTarget {
-    fn server_config(&self) -> ServerConfig {
-        let mut server = ServerConfig::stdio(self.command.clone(), self.args.clone());
-        server.env = self.env.clone();
-        server.working_dir = self.working_dir.clone();
-        server.startup_timeout = self.startup_timeout;
-        server
+/// Read an optional object of string values, checking each key with `key_ok`.
+fn string_map(
+    args: &Value,
+    field: &str,
+    key_ok: impl Fn(&str) -> bool,
+) -> Result<BTreeMap<String, String>, ToolError> {
+    match args.get(field) {
+        None => Ok(BTreeMap::new()),
+        Some(Value::Object(entries)) => entries
+            .iter()
+            .map(|(key, value)| {
+                if !key_ok(key) {
+                    return Err(ToolError::InvalidArgs(format!(
+                        "{field}: invalid name {key:?}"
+                    )));
+                }
+                match value.as_str() {
+                    Some(v) if !v.contains('\0') => Ok((key.clone(), v.to_owned())),
+                    _ => Err(ToolError::InvalidArgs(format!(
+                        "{field}: value for {key} must be a string without NUL"
+                    ))),
+                }
+            })
+            .collect(),
+        Some(_) => Err(ToolError::InvalidArgs(format!(
+            "{field} must be an object of string values"
+        ))),
     }
+}
 
-    /// Spawn one session and run the handshake.
-    pub(super) async fn spawn(&self) -> Result<Session, crate::session::SessionError> {
-        let opts = SpawnOptions::default()
-            .with_env(self.env.clone())
-            .with_working_dir(self.working_dir.clone());
-        Session::spawn_with_timeout(&self.command, &self.args, opts, self.startup_timeout).await
+impl Target {
+    /// Open one session and run the handshake, exactly as a run's first
+    /// session.
+    pub(super) async fn open(&self) -> Result<Session, ToolError> {
+        crate::run::open_session(&self.server)
+            .await
+            .map_err(|e| ToolError::Run(e.to_string()))
     }
 
     pub(super) fn startup_timeout(&self) -> Duration {
-        self.startup_timeout
+        self.server.startup_timeout
     }
 }
 
 /// The server and artifact location every run tool takes.
 pub(super) struct RunTarget {
-    stdio: StdioTarget,
+    target: Target,
     report_dir: PathBuf,
 }
 
-/// Read the stdio target and `report_dir` (default `./runs`, relative to the
+/// Read the target and `report_dir` (default `./runs`, relative to the
 /// server's working directory).
 pub(super) fn run_target(args: &Value) -> Result<RunTarget, ToolError> {
     let report_dir = match args.get("report_dir") {
@@ -273,16 +358,16 @@ pub(super) fn run_target(args: &Value) -> Result<RunTarget, ToolError> {
         },
     };
     Ok(RunTarget {
-        stdio: stdio_target(args)?,
+        target: target(args)?,
         report_dir,
     })
 }
 
 const DEFAULT_REPORT_DIR: &str = "./runs";
 
-/// Spawn the target over stdio and drive `scenario` to completion. `kind`
-/// is the scenario's config `type` string.
-pub(super) async fn run_stdio(
+/// Connect to the target and drive `scenario` to completion. `kind` is the
+/// scenario's config `type` string.
+pub(super) async fn run_scenario(
     target: &RunTarget,
     kind: &str,
     scenario: Box<dyn Scenario>,
@@ -292,7 +377,7 @@ pub(super) async fn run_stdio(
     // rather than an exhaustive struct literal (rejected across the crate
     // boundary).
     let config = Config::new(
-        target.stdio.server_config(),
+        target.target.server.clone(),
         ScenarioConfig::new(kind, json!({})),
     )
     .with_output(OutputConfig::new(target.report_dir.clone(), vec![]));
