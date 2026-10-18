@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `list_target_tools` returns each target tool's `annotations` (null when
+  absent), so an agent can narrow its choice to read-only tools for
+  `race_check` and `sustained_load`. The description calls them the target's
+  hints, not guarantees, and still requires disposable or modifiable data.
+  `protocol::mcp::Tool` gains an `annotations` field.
 - `race-check` and `lost-update` subcommands run those detectors without a
   config file, like `deadlock-probe`. Both take `--env KEY=VALUE` and
   `--startup-timeout`, write the usual reports, and exit non-zero with the
