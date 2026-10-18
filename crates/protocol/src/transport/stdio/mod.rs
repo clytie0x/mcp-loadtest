@@ -89,6 +89,9 @@ pub struct StdioTransport {
     /// Cancels [`Self::stderr_pump`]. Always present so the field is uniform;
     /// a fresh token in the inherit case is simply never tripped.
     pump_cancel: CancellationToken,
+    /// The child as spawned, so its descendants can be killed with it without
+    /// trusting a PID that may since have been reused.
+    identity: Option<tree::ProcessIdentity>,
 }
 
 impl StdioTransport {
@@ -198,9 +201,9 @@ impl Drop for StdioTransport {
         // must be found and killed before the launcher dies.
         if let Some(child) = self.child.as_mut()
             && matches!(child.try_wait(), Ok(None))
-            && let Some(pid) = child.id()
+            && let Some(identity) = self.identity
         {
-            tree::kill_descendants(pid);
+            tree::kill_descendants(identity);
         }
     }
 }

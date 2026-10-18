@@ -8,6 +8,7 @@ use std::io;
 use std::time::Duration;
 
 use super::StdioTransport;
+use super::tree::KilledDescendants;
 use crate::transport::TransportError;
 
 /// Let an EOF-aware server perform its normal cleanup first.
@@ -85,15 +86,21 @@ async fn stop_and_reap_child(transport: &mut StdioTransport) -> Result<(), Trans
 
     // Kill a launcher's descendants first, while they can still be traced
     // to it; killing only the launcher would orphan the real server.
-    if let Some(pid) = child.id() {
-        let _ = tokio::task::spawn_blocking(move || super::tree::kill_descendants(pid)).await;
-    }
+    let descendants = match transport.identity {
+        Some(identity) => {
+            tokio::task::spawn_blocking(move || super::tree::kill_descendants(identity))
+                .await
+                .map_err(|error| TransportError::Other(format!("descendant scan failed: {error}")))
+        }
+        None => Ok(KilledDescendants::default()),
+    };
 
     // `start_kill` only requests termination. Always follow it with a bounded
     // wait so successful shutdown means the process actually exited/reaped.
     // A kill error can race a natural exit, so a successful wait still wins.
+    let forced_deadline = tokio::time::Instant::now() + FORCED_CHILD_REAP_BUDGET;
     let kill_result = child.start_kill();
-    match tokio::time::timeout(FORCED_CHILD_REAP_BUDGET, child.wait()).await {
+    let reaped = match tokio::time::timeout_at(forced_deadline, child.wait()).await {
         Ok(Ok(_status)) => Ok(()),
         Ok(Err(wait_error)) => match child.try_wait() {
             Ok(Some(_status)) => Ok(()),
@@ -113,6 +120,33 @@ async fn stop_and_reap_child(transport: &mut StdioTransport) -> Result<(), Trans
                 kill_result,
             )
         }
+    };
+    reaped?;
+    // Descendants were killed before the launcher, so the rest of the
+    // forced-reap budget is theirs to finish exiting.
+    confirm_descendants_stopped(descendants?, forced_deadline).await
+}
+
+/// Fail teardown when a killed launcher's server could not be signalled or
+/// is still running: success must mean nothing the session started survives.
+async fn confirm_descendants_stopped(
+    killed: KilledDescendants,
+    deadline: tokio::time::Instant,
+) -> Result<(), TransportError> {
+    if !killed.unsignalled.is_empty() {
+        return Err(TransportError::Other(format!(
+            "could not kill descendant PIDs {:?} of the server process",
+            killed.unsignalled
+        )));
+    }
+    let budget = deadline.saturating_duration_since(tokio::time::Instant::now());
+    let survivors = super::tree::survivors(&killed.signalled, budget).await;
+    if survivors.is_empty() {
+        Ok(())
+    } else {
+        Err(TransportError::Other(format!(
+            "descendant PIDs {survivors:?} of the server process survived a forced kill"
+        )))
     }
 }
 
