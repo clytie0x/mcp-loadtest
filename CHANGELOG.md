@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `serve --mcp` returns `instructions` at initialize: which tool answers
+  which question, the order to call them in, and that run tools make real
+  calls. MCP clients pass these to the model. The README shows how to
+  register the server with an agent.
 - `serve --mcp` tools can target a remote server: pass `server_url` (with
   optional `transport`, `allowed_hosts`, and `headers_from_env`) instead of
   `server_command`. Remote targets go through the same SSRF guard, header,

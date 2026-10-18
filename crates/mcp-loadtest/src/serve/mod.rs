@@ -156,6 +156,32 @@ async fn handle_line(line: &str) -> Option<Value> {
     }
 }
 
+/// Guidance MCP clients pass to the model with this server's tools: which
+/// tool answers which question, the order to call them in, and what they do
+/// to the target.
+const INSTRUCTIONS: &str = "\
+mcp-loadtest finds concurrency bugs in another MCP server, the target. \
+Name the target in every call with server_command (a stdio command; add env or \
+working_dir if it needs them) or server_url (a remote endpoint; loopback and \
+private hosts must be listed in allowed_hosts).
+
+Typical order:
+1. list_target_tools: the target's tool names and argument schemas.
+2. cold_start: start-up cost. Use first_call.max_ms to pick a deadlock_probe \
+hang_threshold_ms that a slow start will not trip.
+3. deadlock_probe: hangs and deadlocks when many sessions call a tool at once.
+4. race_check: different answers to identical calls. Use it only on tools \
+that should answer identical inputs identically.
+5. lost_update: writes that are acknowledged and then lost. Needs a write \
+tool whose arguments can carry {marker} and a read tool that returns what \
+was stored.
+6. sustained_load for latency and error rate; compare_runs to diff two runs.
+
+Every run tool returns passed and failure_reasons; read notes for detail and \
+run_dir for the artifacts. Run tools start real server processes or \
+connections and make real tool calls, and lost_update really writes: probe \
+only servers and data you may exercise, and prefer a disposable store.";
+
 /// Build the `initialize` result envelope.
 fn initialize_result() -> Value {
     json!({
@@ -166,7 +192,8 @@ fn initialize_result() -> Value {
         "serverInfo": {
             "name": "mcp-loadtest",
             "version": crate::VERSION,
-        }
+        },
+        "instructions": INSTRUCTIONS,
     })
 }
 
@@ -301,6 +328,19 @@ mod tests {
         assert_eq!(resp["id"], 1);
         assert_eq!(resp["result"]["protocolVersion"], PROTOCOL_VERSION);
         assert_eq!(resp["result"]["serverInfo"]["name"], "mcp-loadtest");
+    }
+
+    #[tokio::test]
+    async fn initialize_instructions_name_every_tool() {
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
+        let resp = handle_line(line).await.expect("initialize must respond");
+        let instructions = resp["result"]["instructions"]
+            .as_str()
+            .expect("instructions must be a string");
+        for tool in tools::tool_defs() {
+            let name = tool["name"].as_str().expect("tool name");
+            assert!(instructions.contains(name), "instructions omit {name}");
+        }
     }
 
     #[tokio::test]
