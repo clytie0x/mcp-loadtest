@@ -71,7 +71,7 @@ plus one extra 20-session probe at the default 10 s threshold, which passed.
 | A `server/discover` reply arriving after the 5 s probe window was read as the `initialize` reply. Late errors failed as `Malformed` (mcp-server-git at 10 sessions). Late successes left the server refusing `initialize` with -32022 (markitdown-mcp, every run). | Fixed, with two tests in `crates/protocol/tests/protocol_2026.rs` |
 | Pooled stdio runs print `Peak RSS: 0.0 MB · Avg CPU: 0.0%` as if measured. The executor clears the stats and adds a note, but neither the markdown nor the JSON report shows scenario notes. | Fixed, with `reporters_disclose_unsampled_process_metrics_and_notes` in `crates/output/tests/reporter_snapshots.rs` |
 | A run with 3 hangs out of 5 calls reports `Error rate: 60.00%` while its Errors table says "No errors recorded". | Fixed, with `errors_section_lists_hangs_and_deadlocks_counted_by_error_rate` in `crates/output/tests/reporter_snapshots.rs` |
-| `race_check` and `sustained` cannot vary arguments per worker, so lost-update races are out of reach (see server-memory note). | Addressed after this run by the `lost_update` scenario (unreleased) |
+| `race_check` and `sustained` cannot vary arguments per worker, so lost-update races are out of reach (see server-memory note). | Addressed by the `lost_update` scenario in v0.3.0; see the 2026-10-18 run |
 | In a trace, a late probe reply is labelled with the method of the request that read it (`initialize`). Replay still pairs frames by id. | Open, cosmetic |
 
 ### Gate status
@@ -79,3 +79,47 @@ plus one extra 20-session probe at the default 10 s threshold, which passed.
 9 of 10 servers recorded. No server bug was confirmed. Tool defects did turn up,
 so the roadmap's pause condition is not met. Remaining for the exit criterion:
 the github-mcp-server run.
+
+## Run 2026-10-18: `lost_update` on server-memory
+
+### Setup
+
+- Host: Linux container, Node 22.22.0.
+- mcp-loadtest `v0.3.0` (`7d1a0a7`), release build.
+- `@modelcontextprotocol/server-memory` at two versions, each installed from
+  npm: `2026.8.31`, the last dated release, and `1.0.0`, the current `latest`
+  tag, published 2026-10-11.
+- `lost_update` with 8 sessions × 5 writes. Every session is its own server
+  process, and all share one `MEMORY_FILE_PATH` set through `[server.env]`.
+  Each write is `create_entities` with one entity named by `{marker}`, and the
+  read is `read_graph`. The config is in
+  [examples/lost-update.md](examples/lost-update.md).
+- `2026.8.31` ran 5 times and `1.0.0` 4 times. After 3 runs of each, the
+  entities in the memory file were counted independently of the detector: 41
+  expected (40 writes plus the control).
+
+### Results
+
+| Version | Runs | Lost updates (of 40) | Entities in file | p95 latency |
+|---|---|---|---|---|
+| `2026.8.31` | 5 | 32, 29, 31, 25, 26 | 12, 10, 16 on the 3 counted runs (41 − lost) | 22 to 267 ms |
+| `1.0.0` | 4 | 0 every run | 41 on each of the 3 counted runs | 83 ms to 2.1 s |
+
+- **`2026.8.31` loses most concurrent writes.** Each tool call loads the whole
+  graph, changes it, and writes the file back, with no lock across processes.
+  Concurrent writers overwrite each other, and every call is still
+  acknowledged. The file counts match the detector's counts exactly.
+- **`1.0.0` is fixed upstream.** It takes a lock file around the
+  read-modify-write and writes through a temporary file and a rename. No write
+  was lost, consistent with the separate script on 2026-10-17. The lock is
+  visible as latency: p95 rose from tens of milliseconds to between 83 ms and
+  2.1 s with 8 concurrent writers.
+- **Exposure:** a deployment pinned to a dated release (`@2026.8.31` or
+  earlier) and shared by more than one client process is affected. Upgrading
+  to `1.0.0` fixes it.
+
+### Gate status
+
+This is the first server bug the detectors have confirmed in the field. It
+was already fixed upstream before this run, so no report was filed.
+
