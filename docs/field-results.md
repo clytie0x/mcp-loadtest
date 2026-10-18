@@ -123,3 +123,46 @@ the github-mcp-server run.
 This is the first server bug the detectors have confirmed in the field. It
 was already fixed upstream before this run, so no report was filed.
 
+## Run 2026-10-18: `lost_update` on mcp-knowledge-graph
+
+### Setup
+
+- Same host and mcp-loadtest build as the server-memory run above.
+- `mcp-knowledge-graph` 1.3.2, the current npm release, a fork of
+  server-memory that adds named stores. Every process got
+  `--memory-path <scratch>/store`, and every call passed
+  `location = "global"` so all processes share one file.
+- `lost_update` with 8 sessions × 5 writes, through `aim_memory_store`
+  (one entity named by `{marker}`) and `aim_memory_read_all`. After each run,
+  the entities in `memory.jsonl` were counted independently.
+
+### Results
+
+| Run | Lost updates | Write errors | Entities in file |
+|---|---|---|---|
+| 1 | 28 of 40 | 0 | 12 |
+| 2 | 35 of 40 | 0 | 5 |
+| 3 | 35 of 39 | 1: `Unterminated string in JSON at position 94` | 4 |
+
+- **Every run loses most acknowledged writes.** Each call loads the whole
+  file, changes it, and writes it back with `fs.writeFile`, with no lock
+  across processes. Concurrent writers overwrite each other.
+- **Torn reads.** `fs.writeFile` truncates the file before it writes, so a
+  concurrent call can read a partial file. In run 3, one call failed to parse
+  it. A call that reads the file while it is empty loads an empty graph and
+  then saves only its own entity, which also drops data written before the
+  concurrent phase: the control entity was gone after every run.
+- **Counts agree.** The entities left in each file equal the acknowledged
+  concurrent writes minus the lost ones (40 − 28, 40 − 35, 39 − 35). The
+  control entity is not counted by the detector and was lost as well.
+- **Exposure:** any deployment where more than one process uses the same
+  store (several agents or editor windows, or one client restarting a
+  server while another runs) can lose memories with no error. The upstream
+  fix is the one server-memory 1.0.0 made: a lock around the
+  read-modify-write and a write to a temporary file followed by a rename.
+
+### Gate status
+
+This is the first open server bug the detectors have found. It has not been
+reported upstream yet.
+
