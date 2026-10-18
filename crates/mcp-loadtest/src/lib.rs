@@ -55,7 +55,7 @@
 //! # }
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/mcp-loadtest/0.2.0")]
+#![doc(html_root_url = "https://docs.rs/mcp-loadtest/0.3.0")]
 
 pub mod analysis;
 pub mod config;

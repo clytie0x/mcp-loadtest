@@ -42,13 +42,13 @@ affected revision.
 
 ## Install
 
-After the immutable `v0.2.0` GitHub Release and its checksums exist, download
+After the immutable `v0.3.0` GitHub Release and its checksums exist, download
 its prebuilt binary or install the exact tag with Cargo:
 
 ```bash
 cargo install \
   --git https://github.com/Teerapat-Vatpitak/mcp-loadtest \
-  --tag v0.2.0 \
+  --tag v0.3.0 \
   --locked \
   mcp-loadtest-cli
 ```
@@ -61,18 +61,22 @@ mcp-loadtest doctor
 ```
 
 If that exact release is not yet available, use the immutable
-[`v0.1.0` GitHub Release](https://github.com/Teerapat-Vatpitak/mcp-loadtest/releases/tag/v0.1.0)
-instead. The project is not distributed through crates.io.
+[`v0.2.0` GitHub Release](https://github.com/Teerapat-Vatpitak/mcp-loadtest/releases/tag/v0.2.0)
+instead; its configuration still accepts the scenarios this release removes.
+The project is not distributed through crates.io.
 
-## New in v0.2.0
+## New in v0.3.0
 
-- Editor-ready Draft 2020-12 config schema
-- JUnit and Prometheus outputs
-- Rolling baseline history and multi-run regression gates
-- Full final MCP `2026-07-28` client-role support
-- OAuth authorization code, client credentials, CIMD, and dynamic registration
+- `lost_update` detector for acknowledged writes that a concurrent writer
+  overwrites
+- `serve --mcp` tools for agents: `list_target_tools`, `race_check`,
+  `lost_update`, and `cold_start`, each returning `passed` plus
+  `failure_reasons`
+- Scope trimmed to the concurrency-bug detectors; see the changelog for the
+  removed scenarios, transport, and report formats
+- Official conformance pin advanced to `c37eec8` (33 client scenarios)
 
-Treat `v0.2.0` as published only when the exact tag, GitHub Release, platform
+Treat `v0.3.0` as published only when the exact tag, GitHub Release, platform
 archives, and matching checksum sidecars all exist.
 
 ## Run a load test
@@ -131,9 +135,9 @@ Pin both the Action and binary to the immutable release:
 
 ```yaml
 - name: Probe MCP server for deadlocks
-  uses: Teerapat-Vatpitak/mcp-loadtest@v0.2.0
+  uses: Teerapat-Vatpitak/mcp-loadtest@v0.3.0
   with:
-    version: v0.2.0
+    version: v0.3.0
     server: "python -m my_mcp"
     args: '["--tool","get_market_data","--concurrent","10","--args","{\"ticker\":\"AAPL\"}"]'
 ```
@@ -229,8 +233,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ## Release status
 
-The source version is `0.2.0`, but source text alone does not prove release
-availability. Consider `v0.2.0` published only after its tag, checksums,
+The source version is `0.3.0`, but source text alone does not prove release
+availability. Consider `v0.3.0` published only after its tag, checksums,
 platform assets, and GitHub Release are verified. The immutable `v0.1.0`
 release remains available under `MIT OR Apache-2.0`; later development is
 Apache-2.0.

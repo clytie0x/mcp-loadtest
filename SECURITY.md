@@ -49,7 +49,7 @@ Implemented since:
 - **DNS-rebinding defense via resolver pinning** (ADR 0016) — hostnames are resolved once at connect time, every resolved address is vetted against the same private-IP blocklist, and the vetted addresses are pinned for the actual connection (reqwest `resolve_to_addrs` for HTTP/SSE). This closes the hostname→private-IP gap (e.g. `localtest.me` → `127.0.0.1`, or DNS that flips between check and connect) that ADR 0012 documented as a residual risk.
 - **Secret-safe static remote headers**—`headers_from_env` is the only
   explicit remote-credential facility. Nonempty remote headers require
-  HTTPS/WSS, URL userinfo and fragments are rejected, HTTP redirects remain
+  HTTPS, URL userinfo and fragments are rejected, HTTP redirects remain
   disabled, and an SSE server-selected endpoint is revalidated before any
   header is forwarded. Query strings are still transmitted to the target but
   are redacted wholesale in reports and traces; they must not carry secrets.
