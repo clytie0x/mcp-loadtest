@@ -16,12 +16,13 @@ use super::{Transport, TransportError};
 
 // The spawn path (process spawn + stderr-mode wiring) lives in `spawn.rs`, the
 // stderr pump in `stderr_pump.rs`, and the bounded line reader (L-2 OOM guard)
-// in `reader.rs` — each a child module so this file stays under the 300-line
-// production convention. See ADR 0013.
+// in `reader.rs`, and descendant cleanup in `tree.rs` — each a child module so
+// this file stays under the 300-line production convention. See ADR 0013.
 mod reader;
 mod shutdown;
 mod spawn;
 mod stderr_pump;
+mod tree;
 use reader::read_bounded_line;
 
 /// Default time budget applied around individual `request` calls when the
@@ -88,6 +89,9 @@ pub struct StdioTransport {
     /// Cancels [`Self::stderr_pump`]. Always present so the field is uniform;
     /// a fresh token in the inherit case is simply never tripped.
     pump_cancel: CancellationToken,
+    /// The child as spawned, so its descendants can be killed with it without
+    /// trusting a PID that may since have been reused.
+    identity: Option<tree::ProcessIdentity>,
 }
 
 impl StdioTransport {
@@ -191,6 +195,14 @@ impl Drop for StdioTransport {
         self.pump_cancel.cancel();
         if let Some(handle) = self.stderr_pump.take() {
             stderr_pump::stop_on_drop(handle, &self.pump_cancel);
+        }
+        // `kill_on_drop` reaches only the direct child; a launcher's server
+        // must be found and killed before the launcher dies.
+        if let Some(child) = self.child.as_mut()
+            && matches!(child.try_wait(), Ok(None))
+            && let Some(identity) = self.identity
+        {
+            tree::kill_descendants(identity);
         }
     }
 }
