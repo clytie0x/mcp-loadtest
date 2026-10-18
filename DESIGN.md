@@ -1397,21 +1397,30 @@ mcp-loadtest is a tool that AI agents will both **operate** (Claude Code running
 ### 21.2 Self-hosted MCP server: `mcp-loadtest serve --mcp`
 
 Agents are the primary users of this mode. It exposes seven tools, listed in
-the order an agent typically calls them. Every tool that takes
-`server_command` also takes optional `env` (extra variables for each server
-process), `working_dir`, and `startup_timeout_ms` (initialize budget, default
-10000). Every run tool also takes an optional `report_dir` (default `./runs`).
-Env values are passed to the server only and are not written to run
-artifacts.
+the order an agent typically calls them. Every tool except `compare_runs`
+names its target with exactly one of:
+
+- `server_command`: a stdio server, with optional `env` (extra variables for
+  each server process) and `working_dir`. Env values reach only the server
+  and are not written to run artifacts.
+- `server_url`: a remote server, with optional `transport` (`http`, the
+  default, or `sse`), `allowed_hosts`, and `headers_from_env` (header name to
+  environment-variable name). The SSRF guard applies as in a config file, so
+  loopback and private addresses need `allowed_hosts`.
+
+Both forms take `startup_timeout_ms` (initialize budget, default 10000). With
+`server_url`, `cold_start` measures a new connection and handshake to the
+already-running server, not a process start.
+Every run tool also takes an optional `report_dir` (default `./runs`).
 
 | Tool                | Args                                                                     | Returns (besides the verdict fields)                 |
 | ------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------- |
-| `list_target_tools` | `server_command`                                                         | `{ protocol_version, tool_count, tools[] }`          |
-| `deadlock_probe`    | `server_command`, `tool`, `concurrent`, `hang_threshold_ms`, `grace_period_ms`, `args` | `{ deadlock_count, hang_count, hung_for_ms[] }` |
-| `race_check`        | `server_command`, `tool`, `concurrent`, `args`                           | `{ divergence_count, hang_count }`                   |
-| `lost_update`       | `server_command`, `write_tool`, `write_args`, `read_tool`, `read_args`, `concurrent`, `writes_per_worker` | `{ lost_update_count }`  |
-| `cold_start`        | `server_command`, `tool`, `iterations`, `warmup`, `args`                 | `{ handshake, first_call }` latency summaries        |
-| `sustained_load`    | `server_command`, `tool`, `concurrent`, `duration_ms`, `args`            | `{ p50_ms … p999_ms, error_rate, requests_per_sec }` |
+| `list_target_tools` | target                                                                   | `{ protocol_version, tool_count, tools[] }`          |
+| `deadlock_probe`    | target, `tool`, `concurrent`, `hang_threshold_ms`, `grace_period_ms`, `args` | `{ deadlock_count, hang_count, hung_for_ms[] }` |
+| `race_check`        | target, `tool`, `concurrent`, `args`                           | `{ divergence_count, hang_count }`                   |
+| `lost_update`       | target, `write_tool`, `write_args`, `read_tool`, `read_args`, `concurrent`, `writes_per_worker` | `{ lost_update_count }`  |
+| `cold_start`        | target, `tool`, `iterations`, `warmup`, `args`                 | `{ handshake, first_call }` latency summaries        |
+| `sustained_load`    | target, `tool`, `concurrent`, `duration_ms`, `args`            | `{ p50_ms … p999_ms, error_rate, requests_per_sec }` |
 | `compare_runs`      | `baseline`, `current`, regression-threshold overrides                    | structured diff with regression flags                |
 
 Every run tool also returns the same verdict fields: `passed`,

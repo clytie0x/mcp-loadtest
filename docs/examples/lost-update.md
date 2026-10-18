@@ -87,6 +87,38 @@ mcp-loadtest lost-update \
 
 ## From an agent
 
-`serve --mcp` exposes the same check as the `lost_update` tool, with the same
-arguments plus `server_command`. It returns `passed`, `failure_reasons`, and
-`lost_update_count`. See [DESIGN.md](../../DESIGN.md) for the tool list.
+`serve --mcp` exposes the same check as the `lost_update` tool. The config
+above becomes one call:
+
+```json
+{
+  "server_command": "npx -y @modelcontextprotocol/server-memory@2026.8.31",
+  "env": { "MEMORY_FILE_PATH": "/tmp/lost-update-probe.jsonl" },
+  "startup_timeout_ms": 60000,
+  "write_tool": "create_entities",
+  "write_args": { "entities": [ { "name": "{marker}", "entityType": "probe", "observations": ["w{worker}s{seq}"] } ] },
+  "read_tool": "read_graph",
+  "concurrent": 8,
+  "writes_per_worker": 5
+}
+```
+
+The raised `startup_timeout_ms` covers the first `npx` download. The tool
+returns `passed`, `failure_reasons`, and `lost_update_count`.
+
+For a server that is already running, pass `server_url` instead of
+`server_command`. Every session then shares that one process, which is
+where unlocked in-memory state loses writes:
+
+```json
+{
+  "server_url": "http://127.0.0.1:3000/mcp",
+  "allowed_hosts": ["127.0.0.1"],
+  "write_tool": "append",
+  "write_args": { "item": "{marker}" },
+  "read_tool": "read"
+}
+```
+
+Loopback and private addresses need `allowed_hosts` (SSRF guard). See
+[DESIGN.md](../../DESIGN.md) §21.2 for every argument.

@@ -10,14 +10,15 @@ use serde_json::{Value, json};
 use crate::metrics::ScenarioMetrics;
 use crate::scenario::cold_start::{ColdStart, HANDSHAKE_METRIC};
 
-use super::{ToolError, duration_ms, required_str, run_stdio, run_target, u32_arg, verdict};
+use super::{ToolError, duration_ms, required_str, run_scenario, run_target, u32_arg, verdict};
 
 pub(super) fn cold_start_def() -> Value {
     json!({
         "name": "cold_start",
         "description":
-            "Measure start-up cost. Spawns a fresh server process per iteration and \
-             times the spawn + initialize handshake and the first tool call \
+            "Measure start-up cost. Opens a fresh session per iteration (a new \
+             process for server_command, a new connection for server_url) and \
+             times the start + initialize handshake and the first tool call \
              separately. Use the first-call max to set a deadlock_probe \
              hang_threshold_ms that will not mistake a slow start for a hang.",
         "inputSchema": {
@@ -73,7 +74,7 @@ pub(super) async fn cold_start(args: &Value) -> Result<Value, ToolError> {
         tool: tool.clone(),
         args: args.get("args").cloned().unwrap_or(json!({})),
     };
-    let report = run_stdio(&target, "cold_start", Box::new(scenario)).await?;
+    let report = run_scenario(&target, "cold_start", Box::new(scenario)).await?;
 
     let mut out = verdict(&report, &target);
     out.insert(

@@ -133,3 +133,30 @@ impl Run {
         self
     }
 }
+
+/// Open one session to `server` the way a run opens its first one: the
+/// settings are validated, then the transport, SSRF host guard, remote
+/// headers, OAuth, and protocol negotiation all apply, within
+/// `server.startup_timeout`. Nothing is written to disk and stderr is
+/// inherited. The caller shuts the session down.
+///
+/// For callers that need a single connection, such as listing a remote
+/// server's tools, without running a scenario.
+pub async fn open_session(
+    server: &mcp_loadtest_core::config::ServerConfig,
+) -> Result<mcp_loadtest_protocol::Session, RunError> {
+    // Validation is defined on the whole config; the scenario only has to
+    // name a known kind.
+    let config = Config::new(
+        server.clone(),
+        mcp_loadtest_core::config::ScenarioConfig::new("sustained", serde_json::json!({})),
+    );
+    config
+        .validate()
+        .map_err(|error| RunError::Config(error.to_string()))?;
+    let startup_deadline = tokio::time::Instant::now()
+        .checked_add(server.startup_timeout)
+        .ok_or_else(|| RunError::Config("server.startup_timeout is too large".into()))?;
+    let oauth = connect::prepare_oauth(&config, startup_deadline).await?;
+    connect::build_session(&config, None, false, None, startup_deadline, oauth).await
+}

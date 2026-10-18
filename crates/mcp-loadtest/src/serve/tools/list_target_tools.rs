@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::{ToolError, stdio_target};
+use super::{ToolError, target};
 
 /// Slack on top of the startup budget for spawn and a slow `tools/list`.
 const LIST_SLACK: Duration = Duration::from_secs(20);
@@ -17,7 +17,7 @@ pub(super) fn list_target_tools_def() -> Value {
     json!({
         "name": "list_target_tools",
         "description":
-            "Spawn an MCP server over stdio and return its tools/list: each tool's \
+            "Connect to an MCP server (stdio command or remote URL) and return its tools/list: each tool's \
              name, description, and input schema, plus the negotiated protocol \
              version. Call this first to choose the `tool` and `args` for \
              deadlock_probe, race_check, lost_update, cold_start, or sustained_load.",
@@ -35,27 +35,26 @@ pub(super) fn list_target_tools_def() -> Value {
 }
 
 pub(super) async fn list_target_tools(args: &Value) -> Result<Value, ToolError> {
-    let target = stdio_target(args)?;
+    let target = target(args)?;
     let budget = target.startup_timeout() + LIST_SLACK;
 
     let listed = tokio::time::timeout(budget, async {
-        let mut session = target.spawn().await?;
+        let mut session = target.open().await?;
         let protocol_version = session.server_protocol_version.clone();
         let tools = session.list_tools().await;
         // Shut down even when tools/list failed so no child is left behind.
         let shutdown = session.shutdown().await;
-        let tools = tools?;
-        shutdown?;
-        Ok::<_, crate::session::SessionError>((protocol_version, tools))
+        let tools = tools.map_err(|e| ToolError::Run(e.to_string()))?;
+        shutdown.map_err(|e| ToolError::Run(e.to_string()))?;
+        Ok::<_, ToolError>((protocol_version, tools))
     })
     .await
     .map_err(|_| {
         ToolError::Run(format!(
-            "target did not finish spawn + tools/list within {}s",
+            "target did not finish connect + tools/list within {}s",
             budget.as_secs()
         ))
-    })?
-    .map_err(|e| ToolError::Run(e.to_string()))?;
+    })??;
 
     let (protocol_version, tools) = listed;
     let tools: Vec<Value> = tools
