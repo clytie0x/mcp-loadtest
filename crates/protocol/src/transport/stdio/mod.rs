@@ -182,16 +182,15 @@ impl Transport for StdioTransport {
 
 impl Drop for StdioTransport {
     fn drop(&mut self) {
-        // Backstop when the caller skipped `shutdown`: cancel the pump and
-        // abort the task. We can't `.await` in `Drop`, so the final flush is
-        // best-effort via the pump's own cancel arm; `abort` guarantees no
-        // orphaned task. `kill_on_drop(true)` requests child termination;
+        // Backstop when the caller skipped `shutdown`. We can't `.await` in
+        // `Drop`, so the pump flushes from a detached, time-bounded task (see
+        // `stop_on_drop`). `kill_on_drop(true)` requests child termination;
         // graceful `shutdown` is the path that also waits for exit/reap.
         // Idempotent: after `shutdown` the pump is already `None` and the
         // token already cancelled, so this is a cheap no-op there.
         self.pump_cancel.cancel();
         if let Some(handle) = self.stderr_pump.take() {
-            handle.abort();
+            stderr_pump::stop_on_drop(handle, &self.pump_cancel);
         }
     }
 }

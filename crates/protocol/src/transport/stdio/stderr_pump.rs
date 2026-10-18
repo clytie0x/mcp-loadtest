@@ -18,6 +18,7 @@
 //! closed or redirected; the capture file is the authoritative artifact.
 
 use std::io;
+use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::ChildStderr;
@@ -30,14 +31,39 @@ use tokio_util::sync::CancellationToken;
 /// the latency being measured and can miss its graceful-exit budget.
 const PUMP_BUFFER_BYTES: usize = 64 * 1024;
 
+/// How long a dropped transport lets the cancelled pump flush lines it has
+/// already read before aborting it.
+const DROP_FLUSH_BUDGET: Duration = Duration::from_secs(2);
+
+/// Stop the pump from a synchronous `Drop`. Cancelling lets its cancel arm
+/// flush what is buffered (up to [`PUMP_BUFFER_BYTES`] of lines already read)
+/// instead of discarding it; the abort after [`DROP_FLUSH_BUDGET`] keeps a
+/// stuck capture write from leaving the task behind.
+pub(super) fn stop_on_drop(mut handle: JoinHandle<io::Result<()>>, cancel: &CancellationToken) {
+    cancel.cancel();
+    match tokio::runtime::Handle::try_current() {
+        Ok(runtime) => {
+            runtime.spawn(async move {
+                if tokio::time::timeout(DROP_FLUSH_BUDGET, &mut handle)
+                    .await
+                    .is_err()
+                {
+                    handle.abort();
+                }
+            });
+        }
+        Err(_) => handle.abort(),
+    }
+}
+
 /// Spawn the stderr pump. Reads `stderr` line-by-line, appending each line
 /// (newline-terminated) to `file`; when `tee` is true the same line is also
 /// written to the parent process's stderr.
 ///
 /// The returned `JoinHandle` is stored on `StdioTransport` (mirrors the
 /// `ws`/`sse` reader task): graceful `shutdown` awaits EOF first and only
-/// cancels when bounded draining stalls; `Drop` cancels + `abort`s it as a
-/// backstop. Capture/read failures are returned by the task and gate shutdown.
+/// cancels when bounded draining stalls; `Drop` stops it through
+/// [`stop_on_drop`] as a backstop. Capture/read failures are returned by the task and gate shutdown.
 pub(super) fn spawn_stderr_pump(
     stderr: ChildStderr,
     file: tokio::fs::File,
@@ -129,7 +155,7 @@ mod tests {
     use super::*;
     use std::pin::Pin;
     use std::sync::{Arc, Mutex};
-    use std::task::{Context, Poll};
+    use std::task::{Context, Poll, Waker};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use tokio::io::ReadBuf;
 
@@ -488,5 +514,103 @@ mod tests {
             writes.len()
         );
         assert_eq!(writes.concat(), burst.into_bytes());
+    }
+
+    /// Holds every write pending until opened, recording that one was tried.
+    #[derive(Clone, Default)]
+    struct GatedWriter {
+        state: Arc<Mutex<Gate>>,
+    }
+
+    #[derive(Default)]
+    struct Gate {
+        open: bool,
+        attempted: bool,
+        waker: Option<Waker>,
+        written: Vec<u8>,
+    }
+
+    impl GatedWriter {
+        fn attempted(&self) -> bool {
+            self.state.lock().unwrap().attempted
+        }
+
+        fn open(&self) {
+            let mut gate = self.state.lock().unwrap();
+            gate.open = true;
+            if let Some(waker) = gate.waker.take() {
+                waker.wake();
+            }
+        }
+    }
+
+    impl AsyncWrite for GatedWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            let mut gate = self.state.lock().unwrap();
+            gate.attempted = true;
+            if !gate.open {
+                gate.waker = Some(cx.waker().clone());
+                return Poll::Pending;
+            }
+            gate.written.extend_from_slice(buf);
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    /// Dropping the transport mid-burst must not discard lines the pump has
+    /// already read: the write in flight and the buffered remainder both
+    /// reach the capture file.
+    #[tokio::test]
+    async fn drop_flushes_lines_already_read() {
+        let (mut source, stderr) = tokio::io::duplex(4 * PUMP_BUFFER_BYTES);
+        let mut burst = String::new();
+        for i in 0..3000 {
+            burst.push_str(&format!("line-{i:05}-{}\n", "x".repeat(40)));
+        }
+        source
+            .write_all(burst.as_bytes())
+            .await
+            .expect("seed injected stderr");
+
+        let sink = GatedWriter::default();
+        let cancel = CancellationToken::new();
+        let handle = spawn_pump(stderr, sink.clone(), false, cancel.clone());
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !sink.attempted() {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("pump never wrote to the sink");
+
+        stop_on_drop(handle, &cancel);
+        sink.open();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let written = String::from_utf8(sink.state.lock().unwrap().written.clone())
+            .expect("captured stderr is UTF-8");
+        assert!(
+            written.len() >= PUMP_BUFFER_BYTES,
+            "only {} bytes reached the sink after drop",
+            written.len()
+        );
+        assert!(written.ends_with('\n'), "drop left a partial line");
+        assert!(
+            burst.starts_with(&written),
+            "drop reordered or invented lines"
+        );
+        drop(source);
     }
 }
