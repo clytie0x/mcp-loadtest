@@ -76,10 +76,21 @@ jobs:
             echo "::error::missing IMMUTABLE_RELEASES_AUDIT_TOKEN (fine-grained, Administration: read)"
             exit 1
           }
-          enabled="$(
+          audit_err="$(mktemp)"
+          if ! enabled="$(
             GH_TOKEN="$IMMUTABLE_RELEASES_AUDIT_TOKEN" \
-              gh api "repos/${GITHUB_REPOSITORY}/immutable-releases" --jq '.enabled'
-          )"
+              gh api "repos/${GITHUB_REPOSITORY}/immutable-releases" --jq '.enabled' 2>"$audit_err"
+          )"; then
+            cat "$audit_err" >&2
+            if grep -q 'HTTP 401' "$audit_err"; then
+              echo "::error::IMMUTABLE_RELEASES_AUDIT_TOKEN was rejected (HTTP 401): it has expired or been revoked. Create a fine-grained token for this repository with Administration: read and replace the Actions secret (docs/RELEASE.md, Gate C)."
+            elif grep -qE 'HTTP (403|404)' "$audit_err"; then
+              echo "::error::IMMUTABLE_RELEASES_AUDIT_TOKEN cannot read this repository's immutable-release setting: give it access to ${GITHUB_REPOSITORY} with Administration: read."
+            else
+              echo "::error::could not read the immutable-release setting with IMMUTABLE_RELEASES_AUDIT_TOKEN"
+            fi
+            exit 1
+          fi
           test "$enabled" = "true" || {
             echo "::error::GitHub immutable releases are disabled; refusing to publish a mutable tag/assets trust anchor"
             exit 1
@@ -421,10 +432,21 @@ jobs:
             echo "::error::missing immutable-release audit credential before publication"
             exit 1
           }
-          immutable_enabled="$(
+          audit_err="$(mktemp)"
+          if ! immutable_enabled="$(
             GH_TOKEN="$IMMUTABLE_RELEASES_AUDIT_TOKEN" \
-              gh api "repos/${GITHUB_REPOSITORY}/immutable-releases" --jq '.enabled'
-          )"
+              gh api "repos/${GITHUB_REPOSITORY}/immutable-releases" --jq '.enabled' 2>"$audit_err"
+          )"; then
+            cat "$audit_err" >&2
+            if grep -q 'HTTP 401' "$audit_err"; then
+              echo "::error::IMMUTABLE_RELEASES_AUDIT_TOKEN was rejected (HTTP 401): it has expired or been revoked. Create a fine-grained token for this repository with Administration: read and replace the Actions secret (docs/RELEASE.md, Gate C)."
+            elif grep -qE 'HTTP (403|404)' "$audit_err"; then
+              echo "::error::IMMUTABLE_RELEASES_AUDIT_TOKEN cannot read this repository's immutable-release setting: give it access to ${GITHUB_REPOSITORY} with Administration: read."
+            else
+              echo "::error::could not read the immutable-release setting with IMMUTABLE_RELEASES_AUDIT_TOKEN"
+            fi
+            exit 1
+          fi
           test "$immutable_enabled" = "true" || {
             echo "::error::GitHub immutable releases were disabled before publication"
             exit 1

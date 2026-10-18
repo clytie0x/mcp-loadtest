@@ -216,7 +216,11 @@ fine-grained, read-only credential scoped to this repository and
 **Administration: read**; the ordinary `GITHUB_TOKEN` cannot read this setting.
 The workflow uses that credential in preflight and again immediately before
 publishing the verified draft. A missing credential, disabled setting, or
-read failure blocks publication. Then obtain one explicit maintainer
+read failure blocks publication. Fine-grained tokens expire: record the
+expiry date when you create one. An expired or revoked token fails preflight
+with `IMMUTABLE_RELEASES_AUDIT_TOKEN was rejected (HTTP 401)`. Replace the
+secret, then rerun `release.yml` for the same tag; no Release exists yet at
+that point. Then obtain one explicit maintainer
 confirmation that names **both** the tag push and the automatically-triggered
 GitHub Release. Only after that confirmation may the maintainer run:
 
