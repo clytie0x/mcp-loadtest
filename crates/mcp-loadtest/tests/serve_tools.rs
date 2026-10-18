@@ -177,6 +177,66 @@ async fn lost_update_reports_missing_writes_with_a_reason() {
 }
 
 #[tokio::test]
+async fn env_and_working_dir_reach_every_server_process() {
+    let scratch = Scratch::new("target-env");
+    // A relative store path only lands in the scratch directory if both
+    // `env` and `working_dir` reached each spawned server.
+    let result = dispatch(
+        "lost_update",
+        &json!({
+            "server_command": format!("{} --mode safe", server_command("mock-store.py")),
+            "env": { "MOCK_STORE_PATH": "store" },
+            "working_dir": scratch.0.display().to_string(),
+            "startup_timeout_ms": 20000,
+            "write_tool": "append",
+            "write_args": { "item": "{marker}" },
+            "read_tool": "read",
+            "concurrent": 3,
+            "writes_per_worker": 2,
+            "report_dir": scratch.0.join("runs").display().to_string(),
+        }),
+    )
+    .await
+    .expect("lost_update");
+
+    assert_verdict(&result, true);
+    assert_eq!(result["lost_update_count"], 0, "{result:#}");
+    let stored = std::fs::read_dir(scratch.0.join("store"))
+        .expect("store directory created through env + working_dir")
+        .count();
+    // Six concurrent writes plus the control write.
+    assert_eq!(stored, 7, "{result:#}");
+
+    let listed = dispatch(
+        "list_target_tools",
+        &json!({
+            "server_command": format!("{} --mode safe", server_command("mock-store.py")),
+            "env": { "MOCK_STORE_PATH": "store" },
+            "working_dir": scratch.0.display().to_string(),
+        }),
+    )
+    .await
+    .expect("list_target_tools");
+    assert_eq!(listed["tool_count"], 2, "{listed:#}");
+}
+
+#[test]
+fn every_spawning_tool_advertises_the_stdio_target_settings() {
+    for def in mcp_loadtest::serve::tools::tool_defs() {
+        let properties = &def["inputSchema"]["properties"];
+        let spawns = properties.get("server_command").is_some();
+        for key in ["env", "working_dir", "startup_timeout_ms"] {
+            assert_eq!(
+                properties.get(key).is_some(),
+                spawns,
+                "{}: {key}",
+                def["name"]
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn run_tools_reject_bad_arguments_before_spawning() {
     for (tool, args) in [
         (
@@ -203,6 +263,26 @@ async fn run_tools_reject_bad_arguments_before_spawning() {
         (
             "race_check",
             json!({ "server_command": "python x.py", "tool": "echo", "report_dir": "" }),
+        ),
+        (
+            "race_check",
+            json!({ "server_command": "python x.py", "tool": "echo", "env": ["A=1"] }),
+        ),
+        (
+            "list_target_tools",
+            json!({ "server_command": "python x.py", "env": { "A": 1 } }),
+        ),
+        (
+            "cold_start",
+            json!({ "server_command": "python x.py", "tool": "echo", "env": { "A=B": "1" } }),
+        ),
+        (
+            "deadlock_probe",
+            json!({ "server_command": "python x.py", "tool": "echo", "working_dir": " " }),
+        ),
+        (
+            "list_target_tools",
+            json!({ "server_command": "python x.py", "startup_timeout_ms": 0 }),
         ),
     ] {
         let err = dispatch(tool, &args)
