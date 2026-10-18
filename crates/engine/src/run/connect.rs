@@ -550,25 +550,60 @@ pub(super) async fn build_session(
             }
             .with_env(config.server.env.clone())
             .with_working_dir(config.server.working_dir.clone());
-            let transport = startup_connect(startup_deadline, startup_timeout, async {
-                StdioTransport::spawn_with(command, config.server.args.iter(), &opts)
-                    .await
-                    .map_err(SessionError::from)
-            })
-            .await?;
-            connect_session_before_deadline(
-                transport,
-                trace,
+            let spawn = || {
+                startup_connect(startup_deadline, startup_timeout, async {
+                    StdioTransport::spawn_with(command, config.server.args.iter(), &opts)
+                        .await
+                        .map_err(SessionError::from)
+                })
+            };
+            let mode = if auto_negotiate {
+                ConnectionMode::Auto
+            } else {
+                ConnectionMode::Legacy
+            };
+            let connected = connect_session_before_deadline(
+                spawn().await?,
+                trace.clone(),
                 startup_deadline,
                 startup_timeout,
                 advertised,
-                if auto_negotiate {
-                    ConnectionMode::Auto
-                } else {
-                    ConnectionMode::Legacy
-                },
+                mode,
             )
-            .await?
+            .await;
+            match connected {
+                // Servers on older Python MCP SDKs end the process on a
+                // request they don't know instead of answering -32601, so
+                // the `server/discover` probe kills them (ADR 0029). Start a
+                // fresh process with the legacy handshake, once.
+                Err(RunError::Session(SessionError::Transport(TransportError::Closed)))
+                    if auto_negotiate =>
+                {
+                    // The trace already holds the unanswered probe; frames
+                    // from a second process would make it unreplayable.
+                    if trace.is_some() {
+                        tracing::warn!(
+                            "server closed the connection on the `server/discover` probe; a \
+                             traced run does not restart it. Set `protocol_version` to the \
+                             revision it speaks (e.g. \"2025-11-25\") to record it"
+                        );
+                        return Err(RunError::Session(SessionError::Transport(
+                            TransportError::Closed,
+                        )));
+                    }
+                    warn_discovery_respawn();
+                    connect_session_before_deadline(
+                        spawn().await?,
+                        trace,
+                        startup_deadline,
+                        startup_timeout,
+                        advertised,
+                        ConnectionMode::Legacy,
+                    )
+                    .await?
+                }
+                result => result?,
+            }
         }
         "http" => {
             let url = config
@@ -723,6 +758,18 @@ where
             }
             other => RunError::Session(other),
         })
+}
+
+/// Say once per process why stdio servers are being started twice.
+fn warn_discovery_respawn() {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    WARNED.call_once(|| {
+        tracing::warn!(
+            "server closed the connection on the `server/discover` probe; restarted it with \
+             the legacy `initialize` handshake. Set `protocol_version = \"2025-11-25\"` (or the \
+             revision it speaks) to skip the probe and the extra start"
+        );
+    });
 }
 
 /// A session rejected after construction is still live. Explicitly shut it

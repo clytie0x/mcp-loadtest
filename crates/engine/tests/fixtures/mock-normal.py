@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""mock-normal: echoes args and rejects malformed JSON without exiting."""
+"""mock-normal: echoes args and rejects malformed JSON without exiting.
+
+`--exit-on-unknown-method` makes an unknown request end the process instead
+of answering -32601, as servers built on older Python MCP SDKs do with
+`server/discover`.
+"""
 
 import json
 import pathlib
@@ -57,6 +62,8 @@ def main():
             respond_ok(msg_id, {
                 "content": [{"type": "text", "text": json.dumps(args)}],
             })
+        elif "--exit-on-unknown-method" in sys.argv:
+            sys.exit(1)
         else:
             respond_error(msg_id, -32601, f"method not found: {method}")
 

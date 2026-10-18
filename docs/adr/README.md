@@ -34,6 +34,7 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0026](0026-advance-conformance-pin-c37eec8.md) | Advance the reviewed conformance pin to c37eec8 (updates 0023)      | Accepted |
 | [0027](0027-lost-update-detector.md)          | Lost-update detector with per-write markers                           | Accepted |
 | [0028](0028-dispatched-release-tagging.md)    | Create release tags from a dispatched workflow                        | Accepted |
+| [0029](0029-restart-stdio-server-killed-by-discovery.md) | Restart a stdio server that the discovery probe killed (extends 0023) | Accepted |
 
 ## When to write a new ADR
 

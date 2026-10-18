@@ -258,7 +258,11 @@ size limits.
 ## Protocol compatibility
 
 `protocol_version = "auto"` discovers the compatible MCP era and falls back
-only when the peer supplies protocol evidence. The final `2026-07-28`
+only when the peer supplies protocol evidence. A stdio server that exits on
+the discovery probe, as servers on older Python MCP SDKs do, is restarted
+once with the legacy handshake
+([ADR 0029](docs/adr/0029-restart-stdio-server-killed-by-discovery.md)).
+The final `2026-07-28`
 client-role surface is supported, while `2025-11-25`, `2025-06-18`, and
 `2025-03-26` remain available for pinned compatibility testing. The scoped
 official client conformance matrix is documented in
