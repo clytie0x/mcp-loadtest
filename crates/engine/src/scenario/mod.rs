@@ -18,6 +18,7 @@ use mcp_loadtest_protocol::transport::TransportError;
 
 pub mod cold_start;
 pub mod deadlock_probe;
+pub mod lost_update;
 pub mod pattern;
 // Not a scenario: internal session-pool driver shared by pooled scenarios
 // See ADR 0017.

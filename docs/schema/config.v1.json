@@ -916,6 +916,50 @@
         }
       }
     },
+    "lostUpdateScenario": {
+      "title": "Lost update",
+      "description": "Concurrent uniquely-marked writes across independent sessions, then one read that must contain every acknowledged write.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "write_tool",
+        "write_args",
+        "read_tool"
+      ],
+      "properties": {
+        "type": {
+          "const": "lost_update"
+        },
+        "concurrent": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 4294967295,
+          "default": 10
+        },
+        "writes_per_worker": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "default": 5
+        },
+        "write_tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "write_args": {
+          "$ref": "#/$defs/argsObject",
+          "description": "String values may use {marker} (required), {worker}, and {seq}."
+        },
+        "read_tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "read_args": {
+          "$ref": "#/$defs/argsObject"
+        }
+      }
+    },
     "patternScenario": {
       "title": "Weighted multi-step pattern",
       "type": "object",
@@ -1039,6 +1083,9 @@
         },
         {
           "$ref": "#/$defs/raceCheckScenario"
+        },
+        {
+          "$ref": "#/$defs/lostUpdateScenario"
         },
         {
           "$ref": "#/$defs/patternScenario"

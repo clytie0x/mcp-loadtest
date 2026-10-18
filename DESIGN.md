@@ -179,7 +179,7 @@ crates/
 │   process.rs (sysinfo sampler), leak_detect.rs (RSS-slope fit), trace/ (writer + replay runtime),
 │   race_detector.rs,
 │   scenario/ (Scenario trait, RunContext; sustained/deadlock_probe/cold_start/version_matrix/
-│              race_check/pool/pattern)
+│              race_check/lost_update/pool/pattern)
 ├── output/     (mcp-loadtest-output)   # renderers — imports core
 │   report/ (markdown, json, junit, prometheus, terminal, wire), regression.rs
 ├── mcp-loadtest/  (facade)             # thin re-export surface over the four crates above
@@ -348,7 +348,7 @@ startup_timeout = "10s"       # connect + initialize/discover + initial tools/li
 # never put credentials in a URL query. No literal secrets or OAuth flows.
 
 [scenario]
-type = "sustained"            # cold_start | sustained | pattern | deadlock_probe | race_check | version_matrix
+type = "sustained"            # cold_start | sustained | pattern | deadlock_probe | race_check | lost_update | version_matrix
 duration = "60s"
 concurrent = 50
 
@@ -386,6 +386,7 @@ formats = ["markdown", "json", "terminal"]
 | `pattern`        | Multi-step weighted-random tool-call sequences with per-pattern `think_time` and `ErrorBehavior`; uses independent pooled sessions when a factory is present and `concurrent > 1`.                                                                                | realistic mixed workloads (explore-then-act, read-then-write) |
 | `deadlock_probe` | For N>1, complete N independent session handshakes then release one `hang_detect`-wrapped call per worker through a shared gate; N=1 uses the focused borrowed-session path.                                                                                    | the **Vibe-Trading bug class** specifically                   |
 | `race_check`     | Complete N independent handshakes, release one identical call per session through a shared start gate, then canonicalize and compare responses. Divergence is a first-class CI failure.                                                                         | concurrent non-determinism / divergent identical inputs       |
+| `lost_update`    | Write a control marker and read it back on one session, then release `concurrent` sessions through the start gate to send `writes_per_worker` writes each, every one carrying a unique `{marker}`. One final read must contain every acknowledged marker; each missing one counts toward `lost_update_count`. A read that shows the control but no concurrent write is inconclusive (sessions do not share state). | acknowledged-but-lost writes / unlocked read-modify-write |
 | `version_matrix` | Drive the same server once per MCP protocol revision (fresh session per revision via `SessionFactory::with_version`, ADR 0018); each revision's `hang_detect`-wrapped calls record under the per-tool key `version:<rev>`, so the report diffs revisions side by side. | revision-specific deadlocks, errors, latency deltas           |
 
 Deferred:
@@ -1069,8 +1070,8 @@ Return: violations vec.
 `Report::passed()` also applies unconditional correctness gates: at least one
 call must be attempted and succeed; deadlocks/divergences and incomplete
 pooled-worker cohorts fail; recorded deadlock/timeout/protocol/malformed/
-crash/disconnect/cancellation outcomes fail. Any error in a `race_check` or
-`deadlock_probe` diagnostic also fails; so does any completed
+crash/disconnect/cancellation outcomes fail, and so does any lost update. Any
+error in a `race_check`, `deadlock_probe`, or `lost_update` diagnostic also fails; so does any completed
 diagnostic call that exceeds `hang_threshold`, including a mixed cohort where
 other calls succeeded. Partial slow calls and application errors in normal
 load scenarios are governed by configured threshold policy.
@@ -1395,14 +1396,16 @@ mcp-loadtest is a tool that AI agents will both **operate** (Claude Code running
 
 ### 21.2 Self-hosted MCP server: `mcp-loadtest serve --mcp`
 
-Agents are the primary users of this mode. It exposes six tools, listed in
-the order an agent typically calls them:
+Agents are the primary users of this mode. It exposes seven tools, listed in
+the order an agent typically calls them. Every run tool also takes an optional
+`report_dir` (default `./runs`).
 
 | Tool                | Args                                                                     | Returns (besides the verdict fields)                 |
 | ------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------- |
 | `list_target_tools` | `server_command`                                                         | `{ protocol_version, tool_count, tools[] }`          |
 | `deadlock_probe`    | `server_command`, `tool`, `concurrent`, `hang_threshold_ms`, `grace_period_ms`, `args` | `{ deadlock_count, hang_count, hung_for_ms[] }` |
 | `race_check`        | `server_command`, `tool`, `concurrent`, `args`                           | `{ divergence_count, hang_count }`                   |
+| `lost_update`       | `server_command`, `write_tool`, `write_args`, `read_tool`, `read_args`, `concurrent`, `writes_per_worker` | `{ lost_update_count }`  |
 | `cold_start`        | `server_command`, `tool`, `iterations`, `warmup`, `args`                 | `{ handshake, first_call }` latency summaries        |
 | `sustained_load`    | `server_command`, `tool`, `concurrent`, `duration_ms`, `args`            | `{ p50_ms … p999_ms, error_rate, requests_per_sec }` |
 | `compare_runs`      | `baseline`, `current`, regression-threshold overrides                    | structured diff with regression flags                |
@@ -1410,7 +1413,8 @@ the order an agent typically calls them:
 Every run tool also returns the same verdict fields: `passed`,
 `failure_reasons` (empty exactly when `passed` is true), `total_calls`,
 `successful_calls`, `error_count`, `incomplete_worker_count`,
-`teardown_failure_count`, `threshold_violation_count`, `notes`, and `run_id`.
+`teardown_failure_count`, `threshold_violation_count`, `notes`, `run_id`, and
+`run_dir`.
 Results go in both `structuredContent` and a JSON text block.
 
 A user can ask an MCP-aware agent to call `deadlock_probe` and receive

@@ -98,6 +98,16 @@ pub fn failure_reasons(report: &Report) -> Vec<String> {
             if divergences == 1 { "" } else { "s" }
         ));
     }
+    let lost = report.scenario_outcome.lost_update_count;
+    if lost > 0 {
+        parts.push(format!(
+            "{lost} lost update{}",
+            if lost == 1 { "" } else { "s" }
+        ));
+    }
+    if report.scenario_name == "lost_update" && report.scenario_outcome.error_count > 0 {
+        parts.push("incomplete lost-update check".to_owned());
+    }
     if report.scenario_name == "race_check" && report.scenario_outcome.error_count > 0 {
         parts.push("incomplete race-check cohort".to_owned());
     }

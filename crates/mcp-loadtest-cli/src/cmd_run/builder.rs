@@ -13,6 +13,7 @@ use mcp_loadtest::ProtocolVersion;
 use mcp_loadtest::scenario::Scenario;
 use mcp_loadtest::scenario::cold_start::ColdStart;
 use mcp_loadtest::scenario::deadlock_probe::DeadlockProbe;
+use mcp_loadtest::scenario::lost_update::LostUpdate;
 use mcp_loadtest::scenario::pattern::PatternScenario;
 use mcp_loadtest::scenario::race_check::RaceCheck;
 use mcp_loadtest::scenario::sustained::Sustained;
@@ -99,6 +100,23 @@ pub(crate) fn build_scenario(kind: &str, params: &Value) -> Result<Box<dyn Scena
                 tool,
                 args,
             }))
+        }
+        "lost_update" => {
+            let plan = LostUpdate {
+                concurrent: u32_field(params, "concurrent", 10)?,
+                writes_per_worker: u32_field(params, "writes_per_worker", 5)?,
+                write_tool: required_str(params, "write_tool")?,
+                write_args: params
+                    .get("write_args")
+                    .cloned()
+                    .ok_or_else(|| anyhow!("scenario.write_args (object) is required"))?,
+                read_tool: required_str(params, "read_tool")?,
+                read_args: params.get("read_args").cloned().unwrap_or(json!({})),
+            };
+            if let Some(message) = plan.validation_error() {
+                return Err(anyhow!("scenario: {message}"));
+            }
+            Ok(Box::new(plan))
         }
         "pattern" => {
             let concurrent = positive_u32("concurrent", u32_field(params, "concurrent", 10)?)?;
@@ -200,6 +218,15 @@ mod tests {
                 "cold_start",
             ),
             ("race_check", json!({"tool": "echo"}), "race_check"),
+            (
+                "lost_update",
+                json!({
+                    "write_tool": "append",
+                    "write_args": {"item": "{marker}"},
+                    "read_tool": "read"
+                }),
+                "lost_update",
+            ),
             (
                 "pattern",
                 json!({
@@ -310,6 +337,25 @@ mod tests {
                 "race_check",
                 json!({"concurrent": 1, "tool": "echo"}),
                 "at least 2",
+            ),
+            (
+                "lost_update",
+                json!({
+                    "write_tool": "append",
+                    "write_args": {"item": "fixed"},
+                    "read_tool": "read"
+                }),
+                "{marker}",
+            ),
+            (
+                "lost_update",
+                json!({
+                    "concurrent": 1,
+                    "write_tool": "append",
+                    "write_args": {"item": "{marker}"},
+                    "read_tool": "read"
+                }),
+                "concurrent",
             ),
             (
                 "pattern",

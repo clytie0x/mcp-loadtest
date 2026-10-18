@@ -110,6 +110,72 @@ async fn cold_start_times_handshake_and_first_call_separately() {
     assert!(result["first_call"]["max_ms"].as_f64().unwrap_or(-1.0) >= 0.0);
 }
 
+/// A scratch directory under the OS temp dir, removed on drop.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new(tag: &str) -> Self {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!(
+            "mcp-loadtest-serve-{tag}-{}-{nanos}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("create scratch dir");
+        Self(dir)
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[tokio::test]
+async fn lost_update_reports_missing_writes_with_a_reason() {
+    let scratch = Scratch::new("lost-update");
+    let store = scratch.0.join("store");
+    let result = dispatch(
+        "lost_update",
+        &json!({
+            "server_command": format!(
+                "{} --mode racy --store {}",
+                server_command("mock-store.py"),
+                store.display()
+            ),
+            "write_tool": "append",
+            "write_args": { "item": "{marker}" },
+            "read_tool": "read",
+            "concurrent": 4,
+            "writes_per_worker": 3,
+            "report_dir": scratch.0.join("runs").display().to_string(),
+        }),
+    )
+    .await
+    .expect("lost_update");
+
+    assert_verdict(&result, false);
+    assert!(
+        result["lost_update_count"].as_u64().unwrap_or(0) > 0,
+        "{result:#}"
+    );
+    assert!(
+        result["failure_reasons"]
+            .to_string()
+            .contains("lost update"),
+        "{result:#}"
+    );
+    let run_dir = PathBuf::from(result["run_dir"].as_str().expect("run_dir"));
+    assert!(run_dir.starts_with(scratch.0.join("runs")), "{result:#}");
+    assert!(
+        run_dir.is_dir(),
+        "run artifacts must land in report_dir: {result:#}"
+    );
+}
+
 #[tokio::test]
 async fn run_tools_reject_bad_arguments_before_spawning() {
     for (tool, args) in [
@@ -124,6 +190,19 @@ async fn run_tools_reject_bad_arguments_before_spawning() {
         (
             "deadlock_probe",
             json!({ "server_command": "python x.py", "tool": "echo", "concurrent": -1 }),
+        ),
+        (
+            "lost_update",
+            json!({
+                "server_command": "python x.py",
+                "write_tool": "append",
+                "write_args": { "item": "no placeholder" },
+                "read_tool": "read",
+            }),
+        ),
+        (
+            "race_check",
+            json!({ "server_command": "python x.py", "tool": "echo", "report_dir": "" }),
         ),
     ] {
         let err = dispatch(tool, &args)

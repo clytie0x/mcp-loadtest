@@ -214,6 +214,7 @@ impl Reporter for PrometheusReporter {
             ),
             ("hang", u64::from(report.scenario_outcome.hang_count)),
             ("divergence", report.scenario_outcome.divergence_count),
+            ("lost_update", report.scenario_outcome.lost_update_count),
             (
                 "incomplete_worker",
                 report.scenario_outcome.incomplete_worker_count,

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `lost_update` scenario and `serve --mcp` tool: concurrent sessions send
+  writes that each carry a unique `{marker}`, then one read must return every
+  acknowledged marker. Missing markers set `lost_update_count`, which fails
+  the run and appears in `metrics.json`, Prometheus, JUnit, and
+  `failure_reasons`. A control write/read on one session rejects plans whose
+  read cannot observe the write, and a read that sees none of the concurrent
+  writes is reported as inconclusive (sessions do not share state). See
+  [ADR 0027](docs/adr/0027-lost-update-detector.md).
+- `serve --mcp` run tools take an optional `report_dir` and return the
+  `run_dir` holding the run's artifacts.
 - The official conformance runners pin `modelcontextprotocol/conformance`
   `c37eec8` (was `49103de`) and also execute
   `json-schema-2020-12-preservation`; all 33 client scenarios pass. See

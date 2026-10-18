@@ -141,6 +141,10 @@
       "type": "integer",
       "description": "Number of identical-input response sets that diverged. Omitted when zero for v1 compatibility."
     },
+    "lost_update_count": {
+      "type": "integer",
+      "description": "Acknowledged lost_update writes missing from the state read back afterwards. Omitted when zero; any non-zero value makes the run fail."
+    },
     "incomplete_worker_count": {
       "type": "integer",
       "description": "Requested pooled workers that failed to complete. Omitted when zero; any non-zero value makes the run fail."

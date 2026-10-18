@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use crate::scenario::sustained::Sustained;
 
-use super::{ToolError, duration_ms, required_str, run_stdio, u32_arg, verdict};
+use super::{ToolError, duration_ms, required_str, run_stdio, run_target, u32_arg, verdict};
 
 pub(super) fn sustained_load_def() -> Value {
     json!({
@@ -50,7 +50,7 @@ pub(super) fn sustained_load_def() -> Value {
 }
 
 pub(super) async fn sustained_load(args: &Value) -> Result<Value, ToolError> {
-    let server_command = required_str(args, "server_command")?;
+    let target = run_target(args)?;
     let tool = required_str(args, "tool")?;
     let concurrent = u32_arg(args, "concurrent", 10)?;
     let run_ms = args
@@ -63,7 +63,7 @@ pub(super) async fn sustained_load(args: &Value) -> Result<Value, ToolError> {
         tool,
         args: args.get("args").cloned().unwrap_or(json!({})),
     };
-    let report = run_stdio(&server_command, "sustained", Box::new(scenario)).await?;
+    let report = run_stdio(&target, "sustained", Box::new(scenario)).await?;
 
     let total = report.metrics.throughput.total_requests;
     let success = report.metrics.throughput.successful_requests;
@@ -74,7 +74,7 @@ pub(super) async fn sustained_load(args: &Value) -> Result<Value, ToolError> {
         errors as f64 / total as f64
     };
 
-    let mut out = verdict(&report);
+    let mut out = verdict(&report, &target);
     out.insert(
         "p50_ms".into(),
         json!(duration_ms(report.metrics.latency.p50)),

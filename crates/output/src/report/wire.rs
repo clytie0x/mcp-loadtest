@@ -47,6 +47,9 @@ pub struct MetricsDocumentV1 {
     /// Response-divergence count. Omitted when zero for v1 compatibility.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub divergence_count: u64,
+    /// Acknowledged writes missing from the read-back state. Omitted when zero.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub lost_update_count: u64,
     /// Incomplete pooled-worker count. Omitted when zero.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub incomplete_worker_count: u64,
@@ -96,6 +99,7 @@ impl From<&Report> for MetricsDocumentV1 {
             deadlock_count: report.scenario_outcome.deadlock_count,
             hang_count: report.scenario_outcome.hang_count,
             divergence_count: report.scenario_outcome.divergence_count,
+            lost_update_count: report.scenario_outcome.lost_update_count,
             incomplete_worker_count: report.scenario_outcome.incomplete_worker_count,
             teardown_failure_count: report.scenario_outcome.teardown_failure_count,
             trace_path: report

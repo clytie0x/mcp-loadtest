@@ -18,6 +18,7 @@ pub(super) const KNOWN_SCENARIOS: &[&str] = &[
     "deadlock_probe",
     "cold_start",
     "race_check",
+    "lost_update",
     "pattern",
     "version_matrix",
 ];

@@ -37,6 +37,9 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
                 "cold_start       — respawns a fresh server per iteration; measures spawn→initialize handshake + first call"
             );
             println!("race_check       — identical calls + response-divergence detection");
+            println!(
+                "lost_update      — concurrent uniquely-marked writes, then a read that must show them all"
+            );
             println!("pattern          — weighted multi-step tool-call sequences");
             println!(
                 "version_matrix   — drives the same server once per MCP protocol revision and diffs the outcomes"

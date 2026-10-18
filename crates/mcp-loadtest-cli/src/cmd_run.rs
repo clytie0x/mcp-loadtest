@@ -15,6 +15,7 @@ use anyhow::{Context, Result};
 
 use mcp_loadtest::StderrCapture;
 use mcp_loadtest::config::Config;
+use mcp_loadtest::report::failure_reasons;
 use mcp_loadtest::run::Run;
 
 use crate::emit::emit_reports;
@@ -94,14 +95,8 @@ pub async fn run_from_config_with_output(
     emit_reports(&report, &formats, &output_dir)?;
     if !report.passed() {
         anyhow::bail!(
-            "run failed correctness gate — {} threshold violation(s), {} deadlock(s), \
-             {} divergence(s), {} incomplete worker(s), {} teardown failure(s), \
-             {}/{} successful calls; see report",
-            report.threshold_violations.len(),
-            report.scenario_outcome.deadlock_count,
-            report.scenario_outcome.divergence_count,
-            report.scenario_outcome.incomplete_worker_count,
-            report.scenario_outcome.teardown_failure_count,
+            "run failed correctness gate — {}; {}/{} successful calls; see report",
+            failure_reasons(&report).join(", "),
             report.scenario_outcome.successful_calls,
             report.scenario_outcome.total_calls,
         );

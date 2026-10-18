@@ -62,12 +62,12 @@ impl Report {
     /// - the scenario attempted no calls;
     /// - no attempted call produced a scenario-level success;
     /// - the scenario claimed more successes than attempts;
-    /// - a deadlock or response divergence was detected;
+    /// - a deadlock, response divergence, or lost update was detected;
     /// - any pooled worker failed to complete, so requested concurrency was
     ///   not actually exercised;
     /// - any session/transport teardown failed or exceeded its lifecycle
     ///   deadline;
-    /// - a race check or deadlock probe produced any unexpected
+    /// - a race check, deadlock probe, or lost-update check produced any unexpected
     ///   error or breached the configured hang threshold (a diagnostic cohort
     ///   cannot be called healthy when one member errored or responded late);
     ///   or
@@ -94,8 +94,10 @@ impl Report {
         .into_iter()
         .any(|count| count > 0);
         let diagnostic_complete =
-            !matches!(self.scenario_name.as_str(), "race_check" | "deadlock_probe")
-                || (outcome.error_count == 0 && outcome.hang_count == 0 && recorded.hang == 0);
+            !matches!(
+                self.scenario_name.as_str(),
+                "race_check" | "deadlock_probe" | "lost_update"
+            ) || (outcome.error_count == 0 && outcome.hang_count == 0 && recorded.hang == 0);
 
         self.threshold_violations.is_empty()
             && outcome.total_calls > 0
@@ -103,6 +105,7 @@ impl Report {
             && outcome.successful_calls <= outcome.total_calls
             && outcome.deadlock_count == 0
             && outcome.divergence_count == 0
+            && outcome.lost_update_count == 0
             && outcome.incomplete_worker_count == 0
             && outcome.teardown_failure_count == 0
             && diagnostic_complete

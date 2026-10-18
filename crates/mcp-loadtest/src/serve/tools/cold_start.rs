@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::metrics::ScenarioMetrics;
 use crate::scenario::cold_start::{ColdStart, HANDSHAKE_METRIC};
 
-use super::{ToolError, duration_ms, required_str, run_stdio, u32_arg, verdict};
+use super::{ToolError, duration_ms, required_str, run_stdio, run_target, u32_arg, verdict};
 
 pub(super) fn cold_start_def() -> Value {
     json!({
@@ -53,7 +53,7 @@ pub(super) fn cold_start_def() -> Value {
 }
 
 pub(super) async fn cold_start(args: &Value) -> Result<Value, ToolError> {
-    let server_command = required_str(args, "server_command")?;
+    let target = run_target(args)?;
     let tool = required_str(args, "tool")?;
     let iterations = u32_arg(args, "iterations", 5)?;
     let warmup = match args.get("warmup") {
@@ -73,9 +73,9 @@ pub(super) async fn cold_start(args: &Value) -> Result<Value, ToolError> {
         tool: tool.clone(),
         args: args.get("args").cloned().unwrap_or(json!({})),
     };
-    let report = run_stdio(&server_command, "cold_start", Box::new(scenario)).await?;
+    let report = run_stdio(&target, "cold_start", Box::new(scenario)).await?;
 
-    let mut out = verdict(&report);
+    let mut out = verdict(&report, &target);
     out.insert(
         "handshake".into(),
         latency_summary(report.per_tool.get(HANDSHAKE_METRIC)),

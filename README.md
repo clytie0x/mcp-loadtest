@@ -160,9 +160,9 @@ thresholds, and baseline gating.
   p99, error-rate, and deadlock regressions.
 - **CI and observability** — JSON, JUnit, and Prometheus outputs.
 - **Agent access** — `mcp-loadtest serve --mcp` lets an agent list a target's
-  tools, run `deadlock_probe`, `race_check`, `cold_start`, and
+  tools, run `deadlock_probe`, `race_check`, `lost_update`, `cold_start`, and
   `sustained_load`, and compare runs. Every run tool returns `passed` plus
-  machine-readable `failure_reasons`.
+  machine-readable `failure_reasons` and the `run_dir` of its artifacts.
 
 ## Built-in scenarios
 
@@ -172,6 +172,7 @@ thresholds, and baseline gating.
 | `sustained` | Track steady-state latency, throughput, and errors |
 | `deadlock_probe` | Reproduce lazy-init and first-call deadlocks |
 | `race_check` | Detect non-deterministic responses |
+| `lost_update` | Detect acknowledged writes that concurrent writers lose |
 | `pattern` | Run weighted multi-step tool-call sequences |
 | `version_matrix` | Compare behavior across MCP protocol revisions |
 

@@ -44,6 +44,7 @@ fn schema_advertises_every_runtime_scenario_and_v02_block() {
         BTreeSet::from([
             "cold_start",
             "deadlock_probe",
+            "lost_update",
             "pattern",
             "race_check",
             "sustained",

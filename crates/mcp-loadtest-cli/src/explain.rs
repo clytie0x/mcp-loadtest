@@ -91,8 +91,8 @@ What it does:
 Algorithm:
   1. Parse --config (TOML). Reject malformed / invalid configs up front.
   2. Build the `[scenario].type` scenario (sustained / pattern /
-     race_check / deadlock_probe / cold_start / version_matrix).
-  3. Spawn / connect the server (stdio child, or http / sse / ws — outbound
+     race_check / lost_update / deadlock_probe / cold_start / version_matrix).
+  3. Spawn / connect the server (stdio child, or http / sse — outbound
      network targets pass the SSRF host-allowlist first; see ADR 0012).
   4. Run `initialize` + `tools/list`, then execute the scenario.
   5. Aggregate metrics, render the configured `[output].formats`.
@@ -153,6 +153,7 @@ What it does:
     list_target_tools  the target's tools/list (call first)
     deadlock_probe     synchronized calls, hang/deadlock classification
     race_check         identical synchronized calls, divergence check
+    lost_update        uniquely-marked concurrent writes, read-back check
     cold_start         handshake and first-call timing per fresh server
     sustained_load     steady load, latency and error rate
     compare_runs       diff two metrics.json reports

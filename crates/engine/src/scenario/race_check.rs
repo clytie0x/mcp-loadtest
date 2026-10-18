@@ -249,7 +249,7 @@ fn store_response(
 /// `Deserialize`, so we build the JSON shape by hand. We preserve the exact
 /// public fields (`content`, `isError`) so the canonicalizer sees the same
 /// shape the server actually returned.
-fn call_tool_result_to_value(result: &CallToolResult) -> Value {
+pub(crate) fn call_tool_result_to_value(result: &CallToolResult) -> Value {
     let content: Vec<Value> = result.content.iter().map(content_to_value).collect();
     serde_json::json!({
         "_meta": result.meta,

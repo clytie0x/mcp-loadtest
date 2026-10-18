@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use crate::scenario::deadlock_probe::DeadlockProbe;
 
-use super::{ToolError, required_str, run_stdio, u32_arg, verdict};
+use super::{ToolError, required_str, run_stdio, run_target, u32_arg, verdict};
 
 pub(super) fn deadlock_probe_def() -> Value {
     json!({
@@ -57,7 +57,7 @@ pub(super) fn deadlock_probe_def() -> Value {
 }
 
 pub(super) async fn deadlock_probe(args: &Value) -> Result<Value, ToolError> {
-    let server_command = required_str(args, "server_command")?;
+    let target = run_target(args)?;
     let tool = required_str(args, "tool")?;
     let concurrent = u32_arg(args, "concurrent", 5)?;
     let hang_threshold_ms = args
@@ -75,9 +75,9 @@ pub(super) async fn deadlock_probe(args: &Value) -> Result<Value, ToolError> {
         tool,
         args: args.get("args").cloned().unwrap_or(json!({})),
     };
-    let report = run_stdio(&server_command, "deadlock_probe", Box::new(scenario)).await?;
+    let report = run_stdio(&target, "deadlock_probe", Box::new(scenario)).await?;
 
-    let mut out = verdict(&report);
+    let mut out = verdict(&report, &target);
     out.insert(
         "deadlock_count".into(),
         json!(report.scenario_outcome.deadlock_count),

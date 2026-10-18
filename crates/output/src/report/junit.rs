@@ -109,6 +109,7 @@ fn failure_summary(report: &Report) -> String {
         "response divergence",
         outcome.divergence_count,
     );
+    push_nonzero(&mut reasons, "lost update", outcome.lost_update_count);
     push_nonzero(
         &mut reasons,
         "incomplete pooled worker",
@@ -122,7 +123,7 @@ fn failure_summary(report: &Report) -> String {
 
     if matches!(
         report.scenario_name.as_str(),
-        "race_check" | "deadlock_probe"
+        "race_check" | "deadlock_probe" | "lost_update"
     ) {
         push_nonzero(
             &mut reasons,
