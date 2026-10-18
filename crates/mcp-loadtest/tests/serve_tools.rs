@@ -55,6 +55,7 @@ async fn list_target_tools_returns_names_and_schemas() {
     assert_eq!(result["tool_count"], 1, "{result:#}");
     assert_eq!(result["tools"][0]["name"], "echo", "{result:#}");
     assert_eq!(result["tools"][0]["input_schema"]["type"], "object");
+    assert!(result["tools"][0]["annotations"].is_null(), "{result:#}");
     assert!(result["protocol_version"].is_string(), "{result:#}");
 }
 
@@ -230,6 +231,11 @@ async fn env_and_working_dir_reach_every_server_process() {
     .await
     .expect("list_target_tools");
     assert_eq!(listed["tool_count"], 2, "{listed:#}");
+    let read = listed["tools"]
+        .as_array()
+        .and_then(|tools| tools.iter().find(|t| t["name"] == "read"))
+        .unwrap_or_else(|| panic!("read tool listed: {listed:#}"));
+    assert_eq!(read["annotations"]["readOnlyHint"], true, "{listed:#}");
 }
 
 #[test]

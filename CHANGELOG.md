@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `list_target_tools` returns each target tool's `annotations` (null when
+  absent), so an agent can narrow its choice to read-only tools for
+  `race_check` and `sustained_load`. The description calls them the target's
+  hints, not guarantees, and still requires disposable or modifiable data.
+  `protocol::mcp::Tool` gains an `annotations` field.
 - `race-check` and `lost-update` subcommands run those detectors without a
   config file, like `deadlock-probe`. Both take `--env KEY=VALUE` and
   `--startup-timeout`, write the usual reports, and exit non-zero with the
@@ -48,6 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The stderr capture pump writes to the log file in 64 KiB blocks instead of
+  once per line. A server that logged a burst used to block on its full
+  stderr pipe while the pump caught up: its latency was skewed, and at
+  shutdown it could miss the 5-second graceful-exit window and be killed with
+  part of its log unwritten. The file is still flushed whenever the server
+  goes quiet, so it can be tailed live, and a transport dropped without
+  `shutdown` gives the pump up to two seconds to write what it has read.
 - `failure_reasons` names every way a run can fail. A `race_check`,
   `deadlock_probe`, or `lost_update` run with a response past the hang
   threshold failed with an empty list, so `serve --mcp` returned

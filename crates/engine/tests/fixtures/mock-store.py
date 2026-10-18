@@ -42,11 +42,13 @@ TOOLS = [
             "properties": {"item": {"type": "string"}},
             "required": ["item"],
         },
+        "annotations": {"readOnlyHint": False, "destructiveHint": False},
     },
     {
         "name": "read",
         "description": "Return every stored item, one per line.",
         "inputSchema": {"type": "object"},
+        "annotations": {"readOnlyHint": True},
     },
 ]
 

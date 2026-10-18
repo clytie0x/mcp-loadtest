@@ -20,7 +20,13 @@ pub(super) fn list_target_tools_def() -> Value {
             "Connect to an MCP server (stdio command or remote URL) and return its tools/list: each tool's \
              name, description, and input schema, plus the negotiated protocol \
              version. Call this first to choose the `tool` and `args` for \
-             deadlock_probe, race_check, lost_update, cold_start, or sustained_load.",
+             deadlock_probe, race_check, lost_update, cold_start, or sustained_load. \
+             Each tool's `annotations` (null when absent) are the target's own hints, \
+             not guarantees: a misconfigured or untrusted server can mark a \
+             destructive tool readOnlyHint. Use them only to narrow the choice \
+             (prefer readOnlyHint tools for race_check and sustained_load, skip \
+             destructiveHint ones); run tools make real calls, so point them only at \
+             disposable data or data you may modify, whatever the annotations say.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -64,6 +70,7 @@ pub(super) async fn list_target_tools(args: &Value) -> Result<Value, ToolError> 
                 "name": tool.name,
                 "description": tool.description,
                 "input_schema": tool.input_schema,
+                "annotations": tool.annotations,
             })
         })
         .collect();
@@ -72,4 +79,20 @@ pub(super) async fn list_target_tools(args: &Value) -> Result<Value, ToolError> 
         "tool_count": tools.len(),
         "tools": tools,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// MCP forbids basing tool-use decisions on annotations from an untrusted
+    /// server, so the agent-facing text must not present them as a safety
+    /// control.
+    #[test]
+    fn description_treats_annotations_as_untrusted_hints() {
+        let def = list_target_tools_def();
+        let description = def["description"].as_str().expect("description");
+        assert!(description.contains("not guarantees"), "{description}");
+        assert!(description.contains("disposable data"), "{description}");
+    }
 }
