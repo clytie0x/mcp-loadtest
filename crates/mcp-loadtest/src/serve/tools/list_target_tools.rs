@@ -20,7 +20,10 @@ pub(super) fn list_target_tools_def() -> Value {
             "Connect to an MCP server (stdio command or remote URL) and return its tools/list: each tool's \
              name, description, and input schema, plus the negotiated protocol \
              version. Call this first to choose the `tool` and `args` for \
-             deadlock_probe, race_check, lost_update, cold_start, or sustained_load.",
+             deadlock_probe, race_check, lost_update, cold_start, or sustained_load. \
+             Each tool's `annotations` (null when absent) carry the server's hints: \
+             prefer readOnlyHint tools for race_check and sustained_load, and avoid \
+             destructiveHint tools unless the target holds disposable data.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -64,6 +67,7 @@ pub(super) async fn list_target_tools(args: &Value) -> Result<Value, ToolError> 
                 "name": tool.name,
                 "description": tool.description,
                 "input_schema": tool.input_schema,
+                "annotations": tool.annotations,
             })
         })
         .collect();

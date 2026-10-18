@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `list_target_tools` returns each target tool's `annotations` (null when
+  absent), so an agent can pick read-only tools for `race_check` and
+  `sustained_load` and avoid destructive ones. `protocol::mcp::Tool` gains an
+  `annotations` field.
 - `serve --mcp` tools can target a remote server: pass `server_url` (with
   optional `transport`, `allowed_hosts`, and `headers_from_env`) instead of
   `server_command`. Remote targets go through the same SSRF guard, header,
