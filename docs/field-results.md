@@ -167,3 +167,49 @@ was already fixed upstream before this run, so no report was filed.
 This is the first open server bug the detectors have found. It has not been
 reported upstream yet.
 
+
+## Run 2026-10-18: `lost_update` on mcp-server-sqlite
+
+### Setup
+
+- Linux container, Python 3.13, uv. mcp-loadtest from `main` plus the fixes
+  listed under "Tool defects found", debug build.
+- `mcp-server-sqlite` 2025.4.25, the last release, run as
+  `uvx --exclude-newer 2025-05-01 mcp-server-sqlite@2025.4.25 --db-path <scratch>/t.db`.
+  Without `--exclude-newer`, uv resolves today's `mcp` SDK, which the server
+  no longer starts against.
+- One table `notes(body text)` created beforehand. `lost_update` with 10
+  sessions × 5 writes through `write_query`
+  (`INSERT INTO notes(body) VALUES ('{marker}')`) and `read_query`
+  (`SELECT body FROM notes`). Every session is its own server process on the
+  same database file.
+
+### Results
+
+| Run | Protocol | Calls | Lost updates | Verdict |
+|---|---|---|---|---|
+| 1 | pinned `2025-03-26` | 53/53 | 0 | PASS |
+| 2 | pinned `2025-03-26`, after the launcher fix | 53/53 | 0 | PASS |
+| 3 | `auto`, after the discovery fix | 53/53 | 0 | PASS |
+
+- **No lost updates.** Each call opens its own connection and commits one
+  `INSERT`, and SQLite serializes writers with its file lock. The detector
+  reports a correct store as correct.
+
+### Tool defects found
+
+- **Servers behind a launcher outlived the run.** The server ignores stdin
+  EOF, so `uvx` stays alive and every shutdown takes the forced-kill path,
+  which killed only `uvx`. Run 1 left 12 server processes running, one per
+  session, and took 38 s. Fixed in clytie0x/mcp-loadtest#22: run 2 left none
+  and took 31 s.
+- **`auto` mode could not reach the server.** Its `mcp` SDK exits on the
+  unknown `server/discover` probe, so every session failed with "connection
+  closed" until the version was pinned. Fixed in clytie0x/mcp-loadtest#23
+  (ADR 0029): run 3 restarts each server once with the legacy handshake and
+  warns once.
+
+### Gate status
+
+A clean pass for the server. Both tool defects are fixed on `main` once
+clytie0x/mcp-loadtest#23 merges.
