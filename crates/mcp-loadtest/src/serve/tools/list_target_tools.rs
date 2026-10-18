@@ -8,13 +8,10 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use crate::session::Session;
+use super::{ToolError, stdio_target};
 
-use super::{ToolError, required_str, split_server_command};
-
-/// Upper bound for spawn + `initialize` + `tools/list`. Matches the session's
-/// default startup budget plus slack for a slow `tools/list`.
-const LIST_BUDGET: Duration = Duration::from_secs(30);
+/// Slack on top of the startup budget for spawn and a slow `tools/list`.
+const LIST_SLACK: Duration = Duration::from_secs(20);
 
 pub(super) fn list_target_tools_def() -> Value {
     json!({
@@ -23,7 +20,7 @@ pub(super) fn list_target_tools_def() -> Value {
             "Spawn an MCP server over stdio and return its tools/list: each tool's \
              name, description, and input schema, plus the negotiated protocol \
              version. Call this first to choose the `tool` and `args` for \
-             deadlock_probe, race_check, cold_start, or sustained_load.",
+             deadlock_probe, race_check, lost_update, cold_start, or sustained_load.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -38,11 +35,11 @@ pub(super) fn list_target_tools_def() -> Value {
 }
 
 pub(super) async fn list_target_tools(args: &Value) -> Result<Value, ToolError> {
-    let server_command = required_str(args, "server_command")?;
-    let (command, cmd_args) = split_server_command(&server_command)?;
+    let target = stdio_target(args)?;
+    let budget = target.startup_timeout() + LIST_SLACK;
 
-    let listed = tokio::time::timeout(LIST_BUDGET, async {
-        let mut session = Session::spawn(&command, &cmd_args).await?;
+    let listed = tokio::time::timeout(budget, async {
+        let mut session = target.spawn().await?;
         let protocol_version = session.server_protocol_version.clone();
         let tools = session.list_tools().await;
         // Shut down even when tools/list failed so no child is left behind.
@@ -55,7 +52,7 @@ pub(super) async fn list_target_tools(args: &Value) -> Result<Value, ToolError> 
     .map_err(|_| {
         ToolError::Run(format!(
             "target did not finish spawn + tools/list within {}s",
-            LIST_BUDGET.as_secs()
+            budget.as_secs()
         ))
     })?
     .map_err(|e| ToolError::Run(e.to_string()))?;

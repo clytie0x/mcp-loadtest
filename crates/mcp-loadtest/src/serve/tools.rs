@@ -24,16 +24,19 @@
 //!
 //! M7 ownership: Agent W. M8 split: per-tool files.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::{Map, Value, json};
 use thiserror::Error;
 
+use crate::SpawnOptions;
 use crate::config::{self, Config, OutputConfig, ScenarioConfig, ServerConfig};
 use crate::report::{Report, failure_reasons};
 use crate::run::Run;
 use crate::scenario::Scenario;
+use crate::session::Session;
 
 mod cold_start;
 mod compare_runs;
@@ -88,6 +91,9 @@ pub fn tool_defs() -> Vec<Value> {
     }
     let mut defs = vec![list_target_tools::list_target_tools_def()];
     defs.extend(run_tools);
+    for def in &mut defs {
+        add_stdio_target_properties(&mut def["inputSchema"]["properties"]);
+    }
     defs.push(compare_runs::compare_runs_def());
     defs
 }
@@ -107,6 +113,28 @@ pub async fn dispatch(name: &str, arguments: &Value) -> Result<Value, ToolError>
 }
 
 // ---- shared helpers -----------------------------------------------------
+
+/// Schema for the optional stdio settings [`stdio_target`] reads.
+fn add_stdio_target_properties(properties: &mut Value) {
+    properties["env"] = json!({
+        "type": "object",
+        "additionalProperties": { "type": "string" },
+        "description": "Extra environment variables for every server process, merged into \
+                        this server's environment (e.g. a data file path or an API key)."
+    });
+    properties["working_dir"] = json!({
+        "type": "string",
+        "description": "Working directory for every server process. Defaults to this server's."
+    });
+    properties["startup_timeout_ms"] = json!({
+        "type": "integer",
+        "minimum": 1,
+        "maximum": MAX_STARTUP_TIMEOUT_MS,
+        "default": 10000,
+        "description": "Budget for each server's initialize handshake. Raise it for servers \
+                        that download or compile on first start (e.g. npx, uvx)."
+    });
+}
 
 pub(super) fn required_str(args: &Value, key: &str) -> Result<String, ToolError> {
     args.get(key)
@@ -129,14 +157,109 @@ pub(super) fn u32_arg(args: &Value, key: &str, default: u32) -> Result<u32, Tool
     }
 }
 
+/// How to start the target over stdio: the command plus the optional
+/// environment, working directory, and startup budget every tool that
+/// spawns it accepts.
+pub(super) struct StdioTarget {
+    command: String,
+    args: Vec<String>,
+    env: BTreeMap<String, String>,
+    working_dir: Option<PathBuf>,
+    startup_timeout: Duration,
+}
+
+/// Longest `startup_timeout_ms` an agent may ask for.
+const MAX_STARTUP_TIMEOUT_MS: u64 = 600_000;
+
+/// Read `server_command` (required) plus the optional `env`, `working_dir`,
+/// and `startup_timeout_ms`.
+pub(super) fn stdio_target(args: &Value) -> Result<StdioTarget, ToolError> {
+    let (command, cmd_args) = split_server_command(&required_str(args, "server_command")?)?;
+    let env = match args.get("env") {
+        None => BTreeMap::new(),
+        Some(Value::Object(vars)) => vars
+            .iter()
+            .map(|(key, value)| {
+                if key.is_empty() || key.contains(['=', '\0']) {
+                    return Err(ToolError::InvalidArgs(format!(
+                        "env name {key:?} must be non-empty without '=' or NUL"
+                    )));
+                }
+                match value.as_str() {
+                    Some(v) if !v.contains('\0') => Ok((key.clone(), v.to_owned())),
+                    _ => Err(ToolError::InvalidArgs(format!(
+                        "env value for {key} must be a string without NUL"
+                    ))),
+                }
+            })
+            .collect::<Result<_, _>>()?,
+        Some(_) => {
+            return Err(ToolError::InvalidArgs(
+                "env must be an object of string values".into(),
+            ));
+        }
+    };
+    let working_dir = match args.get("working_dir") {
+        None => None,
+        Some(v) => match v.as_str() {
+            Some(dir) if !dir.trim().is_empty() => Some(PathBuf::from(dir)),
+            _ => {
+                return Err(ToolError::InvalidArgs(
+                    "working_dir must be a non-empty string".into(),
+                ));
+            }
+        },
+    };
+    let startup_timeout = match args.get("startup_timeout_ms") {
+        None => ServerConfig::stdio(String::new(), Vec::new()).startup_timeout,
+        Some(v) => match v.as_u64() {
+            Some(ms @ 1..=MAX_STARTUP_TIMEOUT_MS) => Duration::from_millis(ms),
+            _ => {
+                return Err(ToolError::InvalidArgs(format!(
+                    "startup_timeout_ms must be an integer in 1..={MAX_STARTUP_TIMEOUT_MS}"
+                )));
+            }
+        },
+    };
+    Ok(StdioTarget {
+        command,
+        args: cmd_args,
+        env,
+        working_dir,
+        startup_timeout,
+    })
+}
+
+impl StdioTarget {
+    fn server_config(&self) -> ServerConfig {
+        let mut server = ServerConfig::stdio(self.command.clone(), self.args.clone());
+        server.env = self.env.clone();
+        server.working_dir = self.working_dir.clone();
+        server.startup_timeout = self.startup_timeout;
+        server
+    }
+
+    /// Spawn one session and run the handshake.
+    pub(super) async fn spawn(&self) -> Result<Session, crate::session::SessionError> {
+        let opts = SpawnOptions::default()
+            .with_env(self.env.clone())
+            .with_working_dir(self.working_dir.clone());
+        Session::spawn_with_timeout(&self.command, &self.args, opts, self.startup_timeout).await
+    }
+
+    pub(super) fn startup_timeout(&self) -> Duration {
+        self.startup_timeout
+    }
+}
+
 /// The server and artifact location every run tool takes.
 pub(super) struct RunTarget {
-    server_command: String,
+    stdio: StdioTarget,
     report_dir: PathBuf,
 }
 
-/// Read `server_command` (required) and `report_dir` (default `./runs`,
-/// relative to the server's working directory).
+/// Read the stdio target and `report_dir` (default `./runs`, relative to the
+/// server's working directory).
 pub(super) fn run_target(args: &Value) -> Result<RunTarget, ToolError> {
     let report_dir = match args.get("report_dir") {
         None => PathBuf::from(DEFAULT_REPORT_DIR),
@@ -150,7 +273,7 @@ pub(super) fn run_target(args: &Value) -> Result<RunTarget, ToolError> {
         },
     };
     Ok(RunTarget {
-        server_command: required_str(args, "server_command")?,
+        stdio: stdio_target(args)?,
         report_dir,
     })
 }
@@ -164,13 +287,12 @@ pub(super) async fn run_stdio(
     kind: &str,
     scenario: Box<dyn Scenario>,
 ) -> Result<Report, ToolError> {
-    let (command, cmd_args) = split_server_command(&target.server_command)?;
     // `Config`/`ScenarioConfig`/`OutputConfig` are `#[non_exhaustive]` and
     // live in `mcp-loadtest-core` — build via the constructors + builders
     // rather than an exhaustive struct literal (rejected across the crate
     // boundary).
     let config = Config::new(
-        ServerConfig::stdio(command, cmd_args),
+        target.stdio.server_config(),
         ScenarioConfig::new(kind, json!({})),
     )
     .with_output(OutputConfig::new(target.report_dir.clone(), vec![]));
