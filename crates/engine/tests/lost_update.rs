@@ -4,6 +4,8 @@
 //!   so the run must fail with `lost_update_count > 0`.
 //! - `safe`: one atomically published file per write keeps every marker,
 //!   so the run passes.
+//! - `last`: each write replaces the store, so the control write and every
+//!   concurrent write but the last are lost, deterministically.
 //! - `memory`: each process keeps its own list, so the run session never
 //!   sees the control written on another session; the check is
 //!   inconclusive, not a lost-update finding.
@@ -116,6 +118,31 @@ async fn per_process_state_is_inconclusive_not_lost_updates() {
             .notes
             .iter()
             .any(|n| n.contains("do not share state")),
+        "{:?}",
+        outcome.notes
+    );
+}
+
+#[tokio::test]
+async fn a_store_that_drops_earlier_data_also_loses_the_control_write() {
+    let report = run_store("last", 4, 3).await;
+    let outcome = &report.scenario_outcome;
+    // 12 concurrent writes, one survives; the control write is lost too.
+    assert_eq!(outcome.lost_update_count, 12, "{outcome:?}");
+    assert!(!report.passed(), "{outcome:?}");
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.contains("control write") && n.contains("already held")),
+        "{:?}",
+        outcome.notes
+    );
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.contains("11 of 12 acknowledged writes")),
         "{:?}",
         outcome.notes
     );
