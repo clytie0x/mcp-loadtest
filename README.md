@@ -40,6 +40,29 @@ The repository includes a
 [regression test](crates/engine/tests/vibe_trading_regression.rs) pinned to the
 affected revision.
 
+Concurrent writers can also overwrite each other while every call reports
+success. `lost-update` gives each write a unique marker and checks that one
+read returns all of them:
+
+```bash
+mcp-loadtest lost-update \
+  --server "npx -y @modelcontextprotocol/server-memory@2026.8.31" \
+  --env MEMORY_FILE_PATH=/tmp/probe.jsonl --startup-timeout 60s \
+  --write-tool create_entities \
+  --write-args '{"entities":[{"name":"{marker}","entityType":"probe","observations":[]}]}' \
+  --read-tool read_graph
+```
+
+```text
+Status: FAIL (36 lost updates)
+Error: lost-update failed — 36 lost updates; 53/53 successful calls; see report
+```
+
+Every call succeeded, and 36 of 50 writes were gone. See
+[field results](docs/field-results.md) for this server and
+mcp-knowledge-graph, and `race-check` for different answers to identical
+calls.
+
 ## Install
 
 After the immutable `v0.3.0` GitHub Release and its checksums exist, download
@@ -148,6 +171,38 @@ Its `args` input is a JSON array of literal arguments; shell syntax is not
 evaluated. See the complete
 [CI integration guide](docs/examples/ci-integration.md) for reports,
 thresholds, and baseline gating.
+
+## Use it from an agent
+
+`mcp-loadtest serve --mcp` is itself an MCP server. Register it with your
+agent once, then ask it to probe another server. In Claude Code:
+
+```bash
+claude mcp add mcp-loadtest -- mcp-loadtest serve --mcp
+```
+
+For clients configured with an `mcpServers` JSON file:
+
+```json
+{
+  "mcpServers": {
+    "mcp-loadtest": { "command": "mcp-loadtest", "args": ["serve", "--mcp"] }
+  }
+}
+```
+
+Then ask, for example: "Use mcp-loadtest to check `python -m my_mcp` for
+deadlocks and lost updates." The server tells the agent which tool answers
+which question and in what order to call them. A typical session calls
+`list_target_tools`, then `cold_start`, `deadlock_probe`, `race_check`, and
+`lost_update`, and branches on each result's `passed` and
+`failure_reasons`. Targets are a stdio command (`server_command`) or a
+remote endpoint (`server_url`). See
+[docs/examples/lost-update.md](docs/examples/lost-update.md#from-an-agent)
+for a full call.
+
+Run tools start real server processes and make real tool calls. Point them
+at servers and data the agent may exercise.
 
 ## What it covers
 

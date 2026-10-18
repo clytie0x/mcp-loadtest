@@ -10,6 +10,7 @@
 
 pub mod cmd_compare;
 pub mod cmd_deadlock;
+pub mod cmd_detect;
 pub mod cmd_doctor;
 pub mod cmd_run;
 pub mod emit;
