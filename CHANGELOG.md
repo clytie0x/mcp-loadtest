@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `race-check` and `lost-update` subcommands run those detectors without a
+  config file, like `deadlock-probe`. Both take `--env KEY=VALUE` and
+  `--startup-timeout`, write the usual reports, and exit non-zero with the
+  failure reasons.
 - `serve --mcp` returns `instructions` at initialize: which tool answers
   which question, the order to call them in, and that run tools make real
   calls. MCP clients pass these to the model. The README shows how to
@@ -50,6 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shutdown it could miss the 5-second graceful-exit window and be killed with
   part of its log unwritten. The file is still flushed whenever the server
   goes quiet, so it can be tailed live.
+- `failure_reasons` names every way a run can fail. A `race_check`,
+  `deadlock_probe`, or `lost_update` run with a response past the hang
+  threshold failed with an empty list, so `serve --mcp` returned
+  `passed: false` with no reason and the CLI printed `failed — ;`. A
+  race-check worker that did not finish without recording an error, and a
+  report claiming more successes than attempts, were also unnamed.
 
 ## [0.3.0] — Release contents
 

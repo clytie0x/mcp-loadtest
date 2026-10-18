@@ -44,6 +44,8 @@ pub fn maybe_handle_explain() -> bool {
 fn explanation_for(subcommand: Option<&str>) -> &'static str {
     match subcommand {
         Some("deadlock-probe") => DEADLOCK_PROBE,
+        Some("race-check") => RACE_CHECK,
+        Some("lost-update") => LOST_UPDATE,
         Some("run") => RUN,
         Some("compare") => COMPARE,
         Some("replay") => REPLAY,
@@ -79,6 +81,38 @@ Defaults: this subcommand probes quickly (N=5, hang_threshold=2s,
 
 Tunable knobs: --concurrent, --hang-threshold, --grace-period.
 See DESIGN.md §15.2 for the spec source.
+";
+
+const RACE_CHECK: &str = "\
+Algorithm:
+  1. Spawn and handshake N independent sessions (default 10), each its own
+     server process.
+  2. Release one identical `tools/call` per session through one
+     synchronization gate.
+  3. Canonicalize the responses and compare them. Any divergence fails the
+     run; the notes describe the distinct responses.
+
+Use it only on tools that should answer identical inputs identically.
+Tunable knobs: --concurrent, --args, --env, --startup-timeout.
+`run` with `[scenario] type = \"race_check\"` is the config form.
+";
+
+const LOST_UPDATE: &str = "\
+Algorithm:
+  1. Control: write one marker on a fresh session and read it on another.
+     If the read cannot see it, the check is inconclusive (the read does not
+     return stored data, or sessions do not share state).
+  2. N sessions (default 10) each send --writes-per-worker writes at once,
+     each with a unique marker substituted for {marker} in --write-args.
+  3. One read must contain every acknowledged marker, the control's
+     included. Each missing marker counts as a lost update and fails the run.
+
+Writes are real: point it at a disposable store. For stdio servers each
+session is its own process, so they must share a file, database, or service.
+Tunable knobs: --concurrent, --writes-per-worker, --read-args, --env,
+  --startup-timeout.
+`run` with `[scenario] type = \"lost_update\"` is the config form; see
+docs/examples/lost-update.md.
 ";
 
 const RUN: &str = "\
@@ -209,6 +243,8 @@ Pass --explain after any subcommand for a description of that subcommand:
 
   run              run a workload from a TOML config (the main entry point)
   deadlock-probe   probe for the Vibe-Trading-bug-class deadlock
+  race-check       different responses to identical concurrent calls
+  lost-update      acknowledged writes that concurrent writers lose
   compare          diff two metrics.json reports (a CI regression gate)
   replay           re-send a recorded trace and diff the responses
   serve            expose mcp-loadtest itself as an MCP server (--mcp)
@@ -259,6 +295,8 @@ mod tests {
         for sc in [
             "run",
             "deadlock-probe",
+            "race-check",
+            "lost-update",
             "compare",
             "replay",
             "serve",
@@ -278,6 +316,8 @@ mod tests {
         assert_eq!(explanation_for(Some("nonsense")), GENERAL);
         // The overview lists every real subcommand.
         assert!(GENERAL.contains("deadlock-probe"));
+        assert!(GENERAL.contains("race-check"));
+        assert!(GENERAL.contains("lost-update"));
         assert!(GENERAL.contains("doctor"));
     }
 }
