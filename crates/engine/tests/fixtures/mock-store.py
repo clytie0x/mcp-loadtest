@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """mock-store: an append/read store for the lost_update detector.
 
-    mock-store.py --mode racy|safe|memory [--store PATH]
+    mock-store.py --mode racy|safe|memory|last [--store PATH]
 
 PATH defaults to $MOCK_STORE_PATH; a relative PATH resolves against the
 working directory.
@@ -12,6 +12,8 @@ working directory.
           atomic rename, so nothing is lost. (O_APPEND is not atomic across
           processes on Windows, so it cannot model a safe store there.)
 - memory: a per-process list; other sessions never see it.
+- last:   every append replaces the whole store with its own item, so only
+          the most recent write survives.
 """
 
 import json
@@ -64,6 +66,17 @@ WRITES = 0
 def append(item):
     if MODE == "memory":
         MEMORY.append(item)
+    elif MODE == "last":
+        tmp = pathlib.Path(f"{STORE}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps([item]))
+        # Windows refuses a rename while another process renames onto the
+        # same target; retry briefly instead of failing the write.
+        for _ in range(50):
+            try:
+                os.replace(tmp, STORE)
+                break
+            except PermissionError:
+                time.sleep(0.01)
     elif MODE == "racy":
         path = pathlib.Path(STORE)
         try:
@@ -96,7 +109,7 @@ def read_all():
     path = pathlib.Path(STORE)
     if not path.exists():
         return []
-    if MODE == "racy":
+    if MODE in ("racy", "last"):
         try:
             return json.loads(path.read_text())
         except (OSError, json.JSONDecodeError):

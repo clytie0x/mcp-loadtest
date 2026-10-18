@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `lost_update` also checks the control write in the final read. If it is
+  missing, the store dropped data it already held (for example, a writer
+  that read a truncated file), and it counts as a lost update with its own
+  note. mcp-knowledge-graph 1.3.2 lost its control write on every run.
+
 ### Added
 
 - `serve --mcp` tools that spawn the target accept `env`, `working_dir`, and
