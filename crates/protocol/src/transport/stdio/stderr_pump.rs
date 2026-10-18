@@ -19,10 +19,16 @@
 
 use std::io;
 
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::ChildStderr;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+
+/// Read and write buffer size. A burst reaches the capture file in blocks
+/// instead of one blocking-pool round trip per line, so a server that logs
+/// heavily is not throttled by its own stderr pipe; a throttled server skews
+/// the latency being measured and can miss its graceful-exit budget.
+const PUMP_BUFFER_BYTES: usize = 64 * 1024;
 
 /// Spawn the stderr pump. Reads `stderr` line-by-line, appending each line
 /// (newline-terminated) to `file`; when `tee` is true the same line is also
@@ -59,7 +65,7 @@ where
 
 async fn pump_stderr<R, W>(
     stderr: R,
-    mut file: W,
+    file: W,
     tee: bool,
     cancel: CancellationToken,
 ) -> io::Result<()>
@@ -67,7 +73,8 @@ where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let mut lines = BufReader::new(stderr).lines();
+    let mut lines = BufReader::with_capacity(PUMP_BUFFER_BYTES, stderr).lines();
+    let mut file = BufWriter::with_capacity(PUMP_BUFFER_BYTES, file);
     loop {
         tokio::select! {
             _ = cancel.cancelled() => {
@@ -87,6 +94,11 @@ where
                         let mut parent_stderr = tokio::io::stderr();
                         let _ = parent_stderr.write_all(line.as_bytes()).await;
                         let _ = parent_stderr.write_all(b"\n").await;
+                    }
+                    // Flush once everything read so far is written, so the
+                    // file stays current while the child is quiet.
+                    if lines.get_ref().buffer().is_empty() {
+                        file.flush().await?;
                     }
                 }
                 // EOF: child closed stderr (usually because it exited).
@@ -116,6 +128,7 @@ where
 mod tests {
     use super::*;
     use std::pin::Pin;
+    use std::sync::{Arc, Mutex};
     use std::task::{Context, Poll};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use tokio::io::ReadBuf;
@@ -152,6 +165,31 @@ mod tests {
                     Poll::Ready(Err(io::Error::other("injected capture flush failure")))
                 }
             }
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    /// Records each write the pump hands to the capture sink.
+    #[derive(Clone, Default)]
+    struct RecordingWriter {
+        writes: Arc<Mutex<Vec<Vec<u8>>>>,
+    }
+
+    impl AsyncWrite for RecordingWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            self.writes.lock().unwrap().push(buf.to_vec());
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
         }
 
         fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -415,5 +453,40 @@ mod tests {
                 .contains("injected child stderr read failure"),
             "unexpected pump error: {error}"
         );
+    }
+
+    /// A burst already queued in the pipe reaches the sink in a few block
+    /// writes, not two per line; per-line writes to a `tokio::fs::File` are
+    /// slow enough to stall a chatty child on its stderr pipe.
+    #[tokio::test]
+    async fn queued_burst_is_written_in_blocks() {
+        const LINES: usize = 1000;
+        let (mut source, stderr) = tokio::io::duplex(PUMP_BUFFER_BYTES);
+        let mut burst = String::new();
+        for i in 0..LINES {
+            burst.push_str(&format!("line-{i}\n"));
+        }
+        source
+            .write_all(burst.as_bytes())
+            .await
+            .expect("seed injected stderr");
+        drop(source);
+
+        let sink = RecordingWriter::default();
+        let handle = spawn_pump(stderr, sink.clone(), false, CancellationToken::new());
+        tokio::time::timeout(Duration::from_secs(2), handle)
+            .await
+            .expect("burst pump timed out")
+            .expect("burst pump task panicked")
+            .expect("burst pump I/O failed");
+
+        let writes = sink.writes.lock().unwrap();
+        assert!(
+            writes.len() <= 2,
+            "a {}-byte burst took {} sink writes",
+            burst.len(),
+            writes.len()
+        );
+        assert_eq!(writes.concat(), burst.into_bytes());
     }
 }

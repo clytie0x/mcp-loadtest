@@ -42,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pushing a tag from a local clone. See
   [ADR 0028](docs/adr/0028-dispatched-release-tagging.md).
 
+### Fixed
+
+- The stderr capture pump writes to the log file in 64 KiB blocks instead of
+  once per line. A server that logged a burst used to block on its full
+  stderr pipe while the pump caught up: its latency was skewed, and at
+  shutdown it could miss the 5-second graceful-exit window and be killed with
+  part of its log unwritten. The file is still flushed whenever the server
+  goes quiet, so it can be tailed live.
+
 ## [0.3.0] — Release contents
 
 This section describes the source contents intended for `v0.3.0`. Its presence
