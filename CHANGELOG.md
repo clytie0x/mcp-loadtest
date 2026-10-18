@@ -72,8 +72,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   race-check worker that did not finish without recording an error, and a
   report claiming more successes than attempts, were also unnamed.
 
-### Fixed
-
 - `protocol_version = "auto"` reaches stdio servers built on older Python MCP
   SDKs. They exit on the unknown `server/discover` probe instead of answering
   -32601, so every session failed with "connection closed" until the version
