@@ -83,6 +83,12 @@ async fn stop_and_reap_child(transport: &mut StdioTransport) -> Result<(), Trans
         }
     }
 
+    // Kill a launcher's descendants first, while they can still be traced
+    // to it; killing only the launcher would orphan the real server.
+    if let Some(pid) = child.id() {
+        let _ = tokio::task::spawn_blocking(move || super::tree::kill_descendants(pid)).await;
+    }
+
     // `start_kill` only requests termination. Always follow it with a bounded
     // wait so successful shutdown means the process actually exited/reaped.
     // A kill error can race a natural exit, so a successful wait still wins.

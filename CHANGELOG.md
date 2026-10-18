@@ -42,6 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pushing a tag from a local clone. See
   [ADR 0028](docs/adr/0028-dispatched-release-tagging.md).
 
+### Fixed
+
+- Shutting down a server started through a launcher (`uvx`, `npx`, a shell
+  script) also kills the server the launcher started. The forced-kill and
+  drop paths used to kill only the launcher, so a server that ignored stdin
+  EOF kept running after the run ended. A lost-update run against
+  mcp-server-sqlite through `uvx` left 12 server processes behind.
+
 ## [0.3.0] — Release contents
 
 This section describes the source contents intended for `v0.3.0`. Its presence
