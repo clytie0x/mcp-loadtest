@@ -12,14 +12,15 @@ and a short `sustained` load): the 9 in the 2026-10-17 table and
 `lost_update` only, so they do not count toward it. github-mcp-server is still
 not run; it needs a read-only token.
 
-Five open server bugs have been found, all lost updates:
+Six open server bugs have been found, all lost updates:
 mcp-knowledge-graph 1.3.2, `@modelcontextprotocol/server-filesystem` 2.0.0,
-`@kazuph/mcp-taskmanager` 1.1.1, mcp-shrimp-task-manager 1.0.21, and
-basic-memory 0.23.2. server-filesystem and mcp-taskmanager are from the
-2026-10-19 file-backed run, the last two from the pipelined run that
-followed. On 2026-10-19 the project owner decided not to report the
-mcp-knowledge-graph bug upstream. None of the five has been reported, so
-the Phase 2 exit is not met.
+`@kazuph/mcp-taskmanager` 1.1.1, mcp-shrimp-task-manager 1.0.21,
+basic-memory 0.23.2, and `@danielmarbach/mnemonic-mcp` 1.0.0.
+server-filesystem and mcp-taskmanager are from the 2026-10-19 file-backed
+run, shrimp and basic-memory from the pipelined run that followed, and
+mnemonic from the run after that. On 2026-10-19 the project owner decided
+not to report the mcp-knowledge-graph bug upstream. None of the six has
+been reported, so the Phase 2 exit is not met.
 
 ## Run 2026-10-17
 
@@ -473,3 +474,46 @@ No new server bug; this confirms the two open ones with the tool itself.
 
 Two new open server bugs, in mcp-shrimp-task-manager and basic-memory; not
 reported upstream.
+
+## Run 2026-10-19: mnemonic-mcp
+
+### Setup
+
+- Linux container, Node 22.22.0. mcp-loadtest from `main` at `0517754`,
+  debug build.
+- `@danielmarbach/mnemonic-mcp` 1.0.0 from npm, with `VAULT_PATH` and
+  `HOME` pointing at a fresh directory per run. The server commits every
+  change to a git repository in the vault, so `HOME` held a `.gitconfig`
+  with a user name and email; without one every commit failed with
+  "Author identity unknown" and the vault stayed uncommitted. No embedding
+  service was running, so embeddings were skipped.
+- `lost-update --concurrent 5 --writes-per-worker 3`, pipelined and
+  default mode, fresh vault each run.
+
+### Results
+
+| Write → read | Mode | Result |
+|---|---|---|
+| `remember` (`title: {marker}`) → `list` (`limit: 200`) | pipelined, 3 runs | PASS, 16 notes and 17 commits each |
+| same | 5 processes, 3 runs | PASS, 16 notes and 17 commits each |
+| `relate` (one note to N others, `bidirectional: false`), N sent at once | script, 4 runs (N = 2, 5, 10, 10) | 1 of N relations kept every run, N/N calls ok |
+| same, one call at a time | script, N = 10 | 10 of 10 kept |
+
+- **`remember` keeps every write.** Each call creates its own note file, and
+  `GitOps` serializes `add` and `commit` behind a mutation lock with retries
+  on `index.lock`, so every note was committed.
+- **`relate` loses relations added to the same note at once.** The tool
+  reads both notes, appends the new entry to the note's `relatedTo`, and
+  writes the note back. The git lock covers only the commit, not that
+  read-modify-write, so the last write wins. After 10 concurrent calls the
+  note listed one relation, and the git log had one `relate` commit, for a
+  different relation than the one in the file. Upstream `main` at `37b59db`
+  (the 1.0.0 release) has the same code in `src/tools/relate.ts`.
+- `lost_update` itself cannot express the `relate` case: each write must
+  name an existing note id, and mnemonic's ids carry a hash that is only
+  known after `remember` returns. A script with the same pipelining found
+  it.
+
+### Gate status
+
+One new open server bug, in mnemonic-mcp; not reported upstream.
