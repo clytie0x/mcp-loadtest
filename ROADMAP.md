@@ -54,7 +54,7 @@ Status: met; see [field-results.md](docs/field-results.md#phase-1-status).
 
 Exit: at least one upstream issue or PR acknowledged by its maintainers.
 
-Status: not met. Three open server bugs are recorded in
+Status: not met. Five open server bugs are recorded in
 [field-results.md](docs/field-results.md#phase-1-status); none has been
 reported upstream.
 

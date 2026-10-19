@@ -116,6 +116,10 @@ The project is not published on crates.io (ADR 0031).
   session sends each round of `--concurrent` writes back to back, the way a
   client running tool calls in parallel does, and matches the replies by id.
   See [docs/examples/lost-update.md](docs/examples/lost-update.md).
+- The stdio transport answers requests a server sends while a call waits
+  (`ping`, and method-not-found for anything else). A server that asks for
+  `roots/list` before serving tools, such as mcp-shrimp-task-manager, could
+  not be tested before.
 
 v0.5.0 changed:
 
