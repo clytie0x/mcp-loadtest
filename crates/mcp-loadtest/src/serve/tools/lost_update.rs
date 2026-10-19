@@ -18,9 +18,11 @@ pub(super) fn lost_update_def() -> Value {
              independent sessions each send writes_per_worker calls to write_tool, \
              each carrying a unique marker in place of {marker}; then one read_tool \
              call must return every acknowledged marker. Missing markers fail the \
-             run (lost_update_count). Use list_target_tools first to pick a write \
-             tool and a read tool that returns what it stored. If the sessions do \
-             not share state, the result is inconclusive, not a finding.",
+             run (lost_update_count). Writes the server refuses with isError were \
+             never acknowledged; they are counted (refused_write_count) but do not \
+             fail the run. Use list_target_tools first to pick a write tool and \
+             a read tool that returns what it stored. If the sessions do not \
+             share state, the result is inconclusive, not a finding.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -85,6 +87,10 @@ pub(super) async fn lost_update(args: &Value) -> Result<Value, ToolError> {
     out.insert(
         "lost_update_count".into(),
         json!(report.scenario_outcome.lost_update_count),
+    );
+    out.insert(
+        "refused_write_count".into(),
+        json!(report.scenario_outcome.refused_write_count),
     );
     Ok(Value::Object(out))
 }

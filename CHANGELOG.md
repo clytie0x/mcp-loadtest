@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `lost_update` no longer fails a server for refusing a write. A concurrent
+  write whose result has `isError` counts toward a new `refused_write_count`
+  (metrics.json, `serve --mcp`) instead of making the check incomplete; every
+  acknowledged write must still be read back. The notes now quote the
+  server's error text for a refused write, control write, or read
+  (ADR 0032, #31).
+
 ## [0.4.1] — Release contents
 
 This section describes the source contents intended for `v0.4.1`. Its presence

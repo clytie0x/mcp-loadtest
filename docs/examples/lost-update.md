@@ -82,7 +82,8 @@ mcp-loadtest lost-update \
 | Outcome | Meaning |
 |---|---|
 | `FAIL (N lost updates)` | N acknowledged writes are missing from the read. The notes list the first few markers, which name the worker and sequence of each lost write. |
-| `incomplete lost-update check` | The control step failed: the read did not show a write made on another session, or no concurrent write was acknowledged. Check that the read tool returns stored data and that the sessions share a store. |
+| `incomplete lost-update check` | The control step failed (the read did not show a write made on another session, or the control write or a read returned an error), no concurrent write was acknowledged, or a write hung or lost its connection. Check that the read tool returns stored data and that the sessions share a store. |
+| `refused N concurrent writes` (note) | The server refused N writes with `isError`, for example a conflict check. They were never acknowledged, so they are not expected in the read and do not fail the run. The note quotes the first refusal. |
 | `PASS` | Every acknowledged write was read back. A race that needs a narrower window may still exist; raise `concurrent` and `writes_per_worker` to widen it. |
 
 ## From an agent
@@ -104,7 +105,8 @@ above becomes one call:
 ```
 
 The raised `startup_timeout_ms` covers the first `npx` download. The tool
-returns `passed`, `failure_reasons`, and `lost_update_count`.
+returns `passed`, `failure_reasons`, `lost_update_count`, and
+`refused_write_count`.
 
 For a server that is already running, pass `server_url` instead of
 `server_command`. Every session then shares that one process, which is

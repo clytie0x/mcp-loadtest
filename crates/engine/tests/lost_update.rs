@@ -1,4 +1,4 @@
-//! `lost_update` against `mock-store.py` in its three modes:
+//! `lost_update` against `mock-store.py` in its modes:
 //!
 //! - `racy`: an unlocked read-modify-write on a shared file loses writes,
 //!   so the run must fail with `lost_update_count > 0`.
@@ -9,6 +9,11 @@
 //! - `memory`: each process keeps its own list, so the run session never
 //!   sees the control written on another session; the check is
 //!   inconclusive, not a lost-update finding.
+//! - `refusing`: refuses odd-numbered writes with `isError`, as a store with
+//!   optimistic concurrency refuses conflicting ones. Every acknowledged
+//!   write lands, so the run passes and counts the refusals.
+//! - `closed`: refuses every write, the control included; the check cannot
+//!   run, and the note carries the server's error text.
 
 mod helpers;
 
@@ -143,6 +148,44 @@ async fn a_store_that_drops_earlier_data_also_loses_the_control_write() {
             .notes
             .iter()
             .any(|n| n.contains("11 of 12 acknowledged writes")),
+        "{:?}",
+        outcome.notes
+    );
+}
+
+#[tokio::test]
+async fn refused_writes_are_counted_and_do_not_fail_the_check() {
+    let report = run_store("refusing", 3, 4).await;
+    let outcome = &report.scenario_outcome;
+    // Sequences 1 and 3 of each worker's 4 writes are refused.
+    assert_eq!(outcome.refused_write_count, 6, "{outcome:?}");
+    assert_eq!(outcome.lost_update_count, 0, "{outcome:?}");
+    assert_eq!(outcome.error_count, 0, "{outcome:?}");
+    assert!(report.passed(), "{outcome:?}");
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.contains("refused 6 concurrent writes")
+                && n.contains(
+                    "REVISION_CONFLICT: the store changed after it was read. Read it again"
+                )),
+        "{:?}",
+        outcome.notes
+    );
+}
+
+#[tokio::test]
+async fn a_refused_control_write_is_inconclusive_and_shows_the_error() {
+    let report = run_store("closed", 2, 1).await;
+    let outcome = &report.scenario_outcome;
+    assert!(!report.passed(), "{outcome:?}");
+    assert_eq!(outcome.refused_write_count, 0, "{outcome:?}");
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.starts_with("control write: `append` returned isError: REVISION_CONFLICT")),
         "{:?}",
         outcome.notes
     );

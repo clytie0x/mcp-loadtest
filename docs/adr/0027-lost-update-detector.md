@@ -1,7 +1,8 @@
 # 27. Lost-update detector with per-write markers
 
 Date: 2026-10-18
-Status: Accepted
+Status: Accepted; the handling of refused writes is amended by
+[0032](0032-lost-update-refused-writes.md)
 
 ## Context
 

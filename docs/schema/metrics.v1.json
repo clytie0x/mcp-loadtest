@@ -145,6 +145,10 @@
       "type": "integer",
       "description": "Acknowledged lost_update writes missing from the state read back afterwards. Omitted when zero; any non-zero value makes the run fail."
     },
+    "refused_write_count": {
+      "type": "integer",
+      "description": "lost_update writes the server refused with an isError result. They were never acknowledged, so they are not expected in the read and do not fail the run. Omitted when zero."
+    },
     "incomplete_worker_count": {
       "type": "integer",
       "description": "Requested pooled workers that failed to complete. Omitted when zero; any non-zero value makes the run fail."
