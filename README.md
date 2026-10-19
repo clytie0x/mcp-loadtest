@@ -72,6 +72,24 @@ Every call succeeded, and 36 of 50 writes were gone. See
 mcp-knowledge-graph, and `race-check` for different answers to identical
 calls.
 
+`lost-update` has found the same bug in these published servers:
+
+| Server | Tool that loses writes |
+|---|---|
+| `@modelcontextprotocol/server-filesystem` 2.0.0 | `edit_file` on one file |
+| `@kazuph/mcp-taskmanager` 1.1.1 | `request_planning` |
+| `mcp-shrimp-task-manager` 1.0.21 | `split_tasks` |
+| `@danielmarbach/mnemonic-mcp` 1.0.0 | `relate` on one note |
+| `mcp-knowledge-graph` 1.3.2 | `aim_memory_store` |
+| `basic-memory` 0.23.2 | `edit_note` appends to one note (fixed on `main`, unreleased) |
+
+The first four were rechecked on 2026-10-19 with an official MCP SDK and
+are still on upstream `main`; the
+[upstream check](docs/field-results.md#upstream-check-2026-10-19) has the
+details. mcp-taskmanager has a
+[regression test](crates/engine/tests/taskmanager_regression.rs) pinned to
+1.1.1.
+
 ## Install
 
 Each [release](https://github.com/clytie0x/mcp-loadtest/releases) has a

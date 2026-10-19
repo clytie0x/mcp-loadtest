@@ -54,9 +54,14 @@ Status: met; see [field-results.md](docs/field-results.md#phase-1-status).
 
 Exit: at least one upstream issue or PR acknowledged by its maintainers.
 
-Status: not met. Six open server bugs are recorded in
-[field-results.md](docs/field-results.md#phase-1-status); none has been
-reported upstream.
+Status: not met. Six server bugs are recorded in
+[field-results.md](docs/field-results.md#phase-1-status). basic-memory has
+since been fixed upstream, and the owner chose not to report
+mcp-knowledge-graph. The other four are verified and drafted in
+[#36](https://github.com/clytie0x/mcp-loadtest/issues/36) but not filed yet.
+The lost-update class has a pinned regression test
+(`crates/engine/tests/taskmanager_regression.rs`), and the README links the
+findings.
 
 ## Phase 3: Lower adoption friction
 

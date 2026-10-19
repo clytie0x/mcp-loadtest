@@ -20,7 +20,9 @@ server-filesystem and mcp-taskmanager are from the 2026-10-19 file-backed
 run, shrimp and basic-memory from the pipelined run that followed, and
 mnemonic from the run after that. On 2026-10-19 the project owner decided
 not to report the mcp-knowledge-graph bug upstream. None of the six has
-been reported, so the Phase 2 exit is not met.
+been reported, so the Phase 2 exit is not met. basic-memory has since
+been fixed on upstream `main` (not yet released); see the
+[upstream check](#upstream-check-2026-10-19).
 
 ## Run 2026-10-17
 
@@ -517,3 +519,38 @@ reported upstream.
 ### Gate status
 
 One new open server bug, in mnemonic-mcp; not reported upstream.
+
+## Upstream check 2026-10-19
+
+Before reporting the open bugs upstream ([#36](https://github.com/clytie0x/mcp-loadtest/issues/36)),
+each draft's repro was run 3 times with an official MCP SDK
+(`@modelcontextprotocol/sdk` 1.32.1 on Node 22.22.0, `mcp` 2.3.0 on Python
+3.13), against the published release and, where `main` has moved past it,
+a build of upstream `main`. Each repo's issues and PRs were searched for an
+existing report.
+
+| Server | Release | Upstream `main` | Existing report | Status |
+|---|---|---|---|---|
+| server-filesystem 2.0.0 | 3/3 lost | 3/3 lost (`51b6382`) | none | open, not filed yet |
+| mcp-taskmanager 1.1.1 | 3/3 lost | same commit (`e9f09ab`) | none | open, not filed yet |
+| mcp-shrimp-task-manager 1.0.21 | 3/3 lost | 3/3 lost (`8a3be6b`) | none | open, not filed yet |
+| mnemonic-mcp 1.0.0 | 3/3 lost | 3/3 lost (`37b59db`) | none | open, not filed yet |
+| basic-memory 0.23.2 | 3/3 lost | **fixed** (`ad9158a`) | none | fixed upstream, unreleased |
+
+- **basic-memory `main` no longer loses appends silently.** The race is
+  still there, but every append that loses it now returns an error, `The
+  note was modified concurrently. Reload the latest content and retry.`, and
+  kept plus refused added up to 5 in all three runs (3+2, 4+1, 2+3). This
+  matches basic-memory #1684 and #1693. `lost_update` would count those as
+  refused writes and pass. The fix is not in a release yet; 0.23.2 on PyPI
+  still loses appends with no error. It is no longer reported upstream.
+- **mcp-taskmanager now has a pinned regression test**,
+  `crates/engine/tests/taskmanager_regression.rs`, which runs `lost_update`
+  against `@kazuph/mcp-taskmanager@1.1.1` in both modes and expects lost
+  updates.
+
+### Gate status
+
+Four open server bugs still need upstream reports: server-filesystem,
+mcp-taskmanager, mcp-shrimp-task-manager and mnemonic-mcp. The issue text is
+ready in #36; filing is pending.
