@@ -351,6 +351,11 @@ A clean pass, and the tenth server with the full set.
   in all 9 runs on 2.0.0 and in every run on 1.0.0 and 2026.8.31. Upstream
   `main` at `51b6382` has the same code. An agent that issues parallel tool calls
   against one file loses edits with no error.
+- **Node 24 behaves the same.** server-filesystem 2.0.0 declares
+  `node >= 24`, and the runs above used Node 22.22.0. Repeated on Node
+  24.22.0: one process kept 1 of 2, 5 and 10 parallel edits; across
+  processes, 3 runs lost 17, 13 and 15 edits with 9, 10 and 11 write errors,
+  and 2 of the 3 files ended torn.
 - **Since 1.0.0 it can also tear the file.** 1.0.0 replaced the temp-file
   rename with an in-place `truncate(0)` and write. Across processes, a reader
   can now see the file empty or half-written. That is where the write errors
