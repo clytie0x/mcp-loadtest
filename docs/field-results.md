@@ -421,3 +421,44 @@ has been reported upstream yet.
 ### Gate status
 
 No new server bug; this confirms the two open ones with the tool itself.
+
+## Run 2026-10-19: pipelined `lost_update` on more servers
+
+### Setup
+
+- Linux container, Node 22.22.0. mcp-loadtest from `main` at `bd2e2bd`
+  (pipelined mode), debug build; the shrimp runs used the build with the
+  stdio fix below.
+- `lost-update --pipelined --concurrent 5 --writes-per-worker 3` unless
+  noted, fresh store each run. server-memory also ran in the default mode
+  with 8 sessions × 5 writes.
+
+### Results
+
+| Server | Write → read | Mode | Result |
+|---|---|---|---|
+| `@modelcontextprotocol/server-memory` 2.0.0 | `create_entities` → `read_graph` | pipelined, 3 runs | PASS |
+| `@modelcontextprotocol/server-memory` 2.0.0 | same | 8 processes, 2 runs | PASS |
+| mcp-knowledge-graph 1.3.2 | `aim_memory_store` → `aim_memory_read_all` | pipelined, 3 runs | FAIL: 12, 12 and 11 of 15 lost |
+| mcp-shrimp-task-manager 1.0.21 | `split_tasks` (`updateMode: append`, one task named by `{marker}`) → `list_tasks` (`status: all`) | pipelined, 3 runs | FAIL: 12 of 15 lost every run; `tasks.json` held 4 tasks |
+
+- **server-memory 2.0.0 keeps every write** in both modes: the in-process
+  mutex and the lock file from the 1.0.0 fix are still in place.
+- **mcp-knowledge-graph is caught without the separate script.** The
+  pipelined mode reproduces the 2026-10-19 rerun's one-process finding.
+- **mcp-shrimp-task-manager loses writes inside one process.** Every tool
+  calls `readTasks()`, changes the list, and `writeTasks()` with
+  `fs.writeFile`, with no lock. Of each round of 5 `split_tasks` calls that
+  all returned success, one task was saved: the file held the control
+  plus 3. Upstream `main` at `8a3be6b` (also 1.0.21) has the same
+  `readTasks`/`writeTasks`.
+
+### Tool defects found
+
+| Defect | Status |
+|---|---|
+| The stdio transport read a request from the server (`roots/list` from mcp-shrimp-task-manager) as the response to its own call and failed the session. Shrimp holds `tools/list` until `roots/list` is answered, so no scenario could run. | Fixed, [#40](https://github.com/clytie0x/mcp-loadtest/issues/40), with `crates/engine/tests/server_requests.rs` |
+
+### Gate status
+
+One new open server bug, in mcp-shrimp-task-manager; not reported upstream.

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The stdio transport now answers requests the server sends to the client
+  while a call waits: `ping` gets an empty result, and any other method
+  (`roots/list`, sampling, elicitation) gets JSON-RPC method-not-found.
+  Before, such a request was read as the call's response and failed the
+  session with "JSON-RPC response requires exactly one of `result` or
+  `error`", so a server like mcp-shrimp-task-manager, which holds
+  `tools/list` until its `roots/list` is answered, could not be tested
+  (#40).
+
 ### Added
 
 - `lost-update --pipelined` (`pipelined` in config and `serve --mcp`) checks

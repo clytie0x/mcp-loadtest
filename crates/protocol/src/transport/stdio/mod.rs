@@ -51,6 +51,36 @@ const MAX_SKIPPED_NOTIFICATIONS: usize = 1024;
 ///
 /// Fast path: a notification must mention `"method"`, and responses almost
 /// never do, so a substring miss short-circuits before any parse.
+/// The reply to `line` if it is a request from the server: a frame with
+/// both `method` and a non-null `id`. `ping` gets an empty result; any other
+/// method gets method-not-found, since this client advertises no capability
+/// a server could call back into (roots, sampling, elicitation).
+fn server_request_reply(line: &str) -> Option<String> {
+    if !line.contains("\"method\"") {
+        return None;
+    }
+    #[derive(serde::Deserialize)]
+    struct RequestProbe {
+        #[serde(default)]
+        id: Option<serde_json::Value>,
+        #[serde(default)]
+        method: Option<String>,
+    }
+    let probe: RequestProbe = serde_json::from_str(line).ok()?;
+    let id = probe.id.filter(|id| !id.is_null())?;
+    let method = probe.method?;
+    let reply = if method == "ping" {
+        serde_json::json!({ "jsonrpc": "2.0", "id": id, "result": {} })
+    } else {
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32601, "message": format!("method not found: {method}") }
+        })
+    };
+    Some(reply.to_string())
+}
+
 fn is_notification_frame(line: &str) -> bool {
     if !line.contains("\"method\"") {
         return false;
@@ -142,6 +172,15 @@ impl StdioTransport {
             if is_notification_frame(line) {
                 continue;
             }
+            // A request from the server (`roots/list`, `ping`, ...) is
+            // answered here; the server may hold our call until it is.
+            if let Some(reply) = server_request_reply(line) {
+                let stdin = self.stdin_mut()?;
+                stdin.write_all(reply.as_bytes()).await?;
+                stdin.write_all(b"\n").await?;
+                stdin.flush().await?;
+                continue;
+            }
             return Ok(line.to_string());
         }
         Err(TransportError::Other(format!(
@@ -219,7 +258,27 @@ impl Drop for StdioTransport {
 // (unlike the unix-gated loopback below).
 #[cfg(test)]
 mod notification_tests {
-    use super::is_notification_frame;
+    use super::{is_notification_frame, server_request_reply};
+
+    #[test]
+    fn server_requests_are_answered() {
+        let ping = server_request_reply(r#"{"jsonrpc":"2.0","id":"s1","method":"ping"}"#)
+            .expect("ping is a request");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&ping).expect("reply JSON"),
+            serde_json::json!({ "jsonrpc": "2.0", "id": "s1", "result": {} })
+        );
+        let roots = server_request_reply(r#"{"method":"roots/list","jsonrpc":"2.0","id":0}"#)
+            .expect("roots/list is a request");
+        assert!(
+            roots.contains(r#""id":0"#) && roots.contains("-32601"),
+            "{roots}"
+        );
+        // Responses and notifications are not requests.
+        assert!(server_request_reply(r#"{"jsonrpc":"2.0","id":3,"result":{}}"#).is_none());
+        assert!(server_request_reply(r#"{"jsonrpc":"2.0","method":"notifications/x"}"#).is_none());
+        assert!(server_request_reply(r#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#).is_none());
+    }
 
     #[test]
     fn notification_without_id_is_skipped() {
