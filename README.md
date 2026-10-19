@@ -198,13 +198,14 @@ Pin both the Action and binary to the immutable release:
 
 The Action downloads a prebuilt binary, verifies its SHA-256 checksum, and
 fails the job when the command or an optional baseline comparison fails.
-[mcp-loadtest-action-demo](https://github.com/clytie0x/mcp-loadtest-action-demo)
-runs it against a healthy server, which must pass, and a deadlocking one,
-which must fail.
 Its `args` input is a JSON array of literal arguments; shell syntax is not
 evaluated. See the complete
 [CI integration guide](docs/examples/ci-integration.md) for reports,
 thresholds, and baseline gating.
+
+[mcp-loadtest-action-demo](https://github.com/clytie0x/mcp-loadtest-action-demo)
+runs the Action against a healthy server, which must pass, and a deadlocking
+one, which must fail.
 
 ## Use it from an agent
 
