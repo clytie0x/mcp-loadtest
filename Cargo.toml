@@ -6,8 +6,8 @@ resolver = "2"
 version = "0.4.0"
 edition = "2024"
 license = "Apache-2.0"
-repository = "https://github.com/Teerapat-Vatpitak/mcp-loadtest"
-homepage = "https://github.com/Teerapat-Vatpitak/mcp-loadtest"
+repository = "https://github.com/clytie0x/mcp-loadtest"
+homepage = "https://github.com/clytie0x/mcp-loadtest"
 authors = ["Teerapat Vatpitak"]
 rust-version = "1.88"
 

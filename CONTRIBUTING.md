@@ -5,7 +5,7 @@ Thanks for considering a contribution!
 ## Quick start
 
 ```bash
-git clone https://github.com/Teerapat-Vatpitak/mcp-loadtest
+git clone https://github.com/clytie0x/mcp-loadtest
 cd mcp-loadtest
 bash scripts/ci-checks.sh    # or pwsh scripts/ci-checks.ps1 on Windows
 ```

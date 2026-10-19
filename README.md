@@ -1,7 +1,7 @@
 # mcp-loadtest
 
-[![CI](https://github.com/Teerapat-Vatpitak/mcp-loadtest/actions/workflows/ci.yml/badge.svg)](https://github.com/Teerapat-Vatpitak/mcp-loadtest/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Teerapat-Vatpitak/mcp-loadtest)](https://github.com/Teerapat-Vatpitak/mcp-loadtest/releases/latest)
+[![CI](https://github.com/clytie0x/mcp-loadtest/actions/workflows/ci.yml/badge.svg)](https://github.com/clytie0x/mcp-loadtest/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/clytie0x/mcp-loadtest)](https://github.com/clytie0x/mcp-loadtest/releases/latest)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](#license)
 [![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](rust-toolchain.toml)
 
@@ -74,28 +74,41 @@ calls.
 
 ## Install
 
-After the immutable `v0.4.0` GitHub Release and its checksums exist, download
-its prebuilt binary or install the exact tag with Cargo:
+Each [release](https://github.com/clytie0x/mcp-loadtest/releases) has a
+prebuilt archive for Linux x86_64, macOS (Intel and Apple silicon), and
+Windows x86_64, each with a `.sha256` file. On Linux:
 
 ```bash
-cargo install \
-  --git https://github.com/Teerapat-Vatpitak/mcp-loadtest \
-  --tag v0.4.0 \
-  --locked \
-  mcp-loadtest-cli
+V=v0.4.0
+A=mcp-loadtest-$V-x86_64-unknown-linux-gnu
+curl -fsSLO https://github.com/clytie0x/mcp-loadtest/releases/download/$V/$A.tar.gz
+curl -fsSLO https://github.com/clytie0x/mcp-loadtest/releases/download/$V/$A.tar.gz.sha256
+sha256sum -c $A.tar.gz.sha256
+tar xzf $A.tar.gz
+sudo install $A/mcp-loadtest /usr/local/bin/   # or copy it anywhere on your PATH
 ```
 
-Then verify the installation:
+On macOS, set `A` to `mcp-loadtest-$V-aarch64-apple-darwin` (Apple silicon)
+or `mcp-loadtest-$V-x86_64-apple-darwin` (Intel), and check with
+`shasum -a 256 -c` instead of `sha256sum -c`. On Windows, download
+`mcp-loadtest-<version>-x86_64-pc-windows-msvc.zip` and its `.sha256` from
+the release page, and compare the hash with
+`Get-FileHash <zip> -Algorithm SHA256`.
+
+Or build the exact tag with Cargo, which takes a few minutes:
+
+```bash
+cargo install --git https://github.com/clytie0x/mcp-loadtest --tag v0.4.0 --locked mcp-loadtest-cli
+```
+
+Then check the installation:
 
 ```bash
 mcp-loadtest --version
 mcp-loadtest doctor
 ```
 
-If that exact release is not yet available, use the immutable
-[`v0.3.0` GitHub Release](https://github.com/Teerapat-Vatpitak/mcp-loadtest/releases/tag/v0.3.0)
-instead; its `deadlock-probe` still defaults `--tool` to `echo`.
-The project is not distributed through crates.io.
+The project is not published on crates.io (ADR 0031).
 
 ## New in v0.4.0
 
@@ -169,7 +182,7 @@ Pin both the Action and binary to the immutable release:
 
 ```yaml
 - name: Probe MCP server for deadlocks
-  uses: Teerapat-Vatpitak/mcp-loadtest@v0.4.0
+  uses: clytie0x/mcp-loadtest@v0.4.0
   with:
     version: v0.4.0
     server: "python -m my_mcp"
@@ -293,7 +306,7 @@ official client conformance matrix is documented in
 ## Development
 
 ```bash
-git clone https://github.com/Teerapat-Vatpitak/mcp-loadtest
+git clone https://github.com/clytie0x/mcp-loadtest
 cd mcp-loadtest
 bash scripts/ci-checks.sh
 # Windows: pwsh scripts/ci-checks.ps1

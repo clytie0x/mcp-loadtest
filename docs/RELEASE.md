@@ -276,10 +276,10 @@ Verify:
 - [ ] every downloaded archive matches its sidecar checksum;
 - [ ] a clean machine can run the binary and `mcp-loadtest doctor`;
 - [ ] `cargo install --git
-      https://github.com/Teerapat-Vatpitak/mcp-loadtest --tag v0.4.0 --locked
+      https://github.com/clytie0x/mcp-loadtest --tag v0.4.0 --locked
       mcp-loadtest-cli` succeeds;
 - [ ] a disposable consumer workflow pinned to
-      `Teerapat-Vatpitak/mcp-loadtest@v0.4.0` passes the Action contract tests;
+      `clytie0x/mcp-loadtest@v0.4.0` passes the Action contract tests;
 - [ ] release notes describe remote authentication and unsupported protocol
       cases without overstating them.
 - [ ] authenticated remote examples use HTTPS and do not place

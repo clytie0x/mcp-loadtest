@@ -81,7 +81,7 @@ runs:
         GH_TOKEN: ${{ github.token }}
         INPUT_VERSION: ${{ inputs.version }}
       run: |
-        repo="Teerapat-Vatpitak/mcp-loadtest"
+        repo="clytie0x/mcp-loadtest"
         # shellcheck source=scripts/action-args.sh
         source "${GITHUB_ACTION_PATH}/scripts/action-args.sh"
 

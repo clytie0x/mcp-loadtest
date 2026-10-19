@@ -40,7 +40,7 @@ jobs:
             - name: Deadlock probe
               id: loadtest
               # Post-release only: pin the immutable exact version.
-              uses: Teerapat-Vatpitak/mcp-loadtest@v0.4.0
+              uses: clytie0x/mcp-loadtest@v0.4.0
               with:
                   version: v0.4.0
                   server: "python -m my_mcp"
@@ -173,7 +173,7 @@ jobs:
 
             # Post-release example: install from the immutable git tag.
             - name: Install mcp-loadtest
-              run: cargo install --git https://github.com/Teerapat-Vatpitak/mcp-loadtest --tag v0.4.0 --locked mcp-loadtest-cli
+              run: cargo install --git https://github.com/clytie0x/mcp-loadtest --tag v0.4.0 --locked mcp-loadtest-cli
 
             # Headline check — fails the build on any deadlock.
             - name: Deadlock probe
