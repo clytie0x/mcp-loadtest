@@ -3,6 +3,15 @@
 Phase 1 of [ROADMAP.md](../ROADMAP.md): run the detectors against real MCP
 servers and record every run, including clean passes.
 
+## Phase 1 status
+
+11 servers are recorded across the runs below: the 9 run in the 2026-10-17
+table, plus `mcp-knowledge-graph` 1.3.2 and `mcp-server-sqlite` 2025.4.25.
+This meets the Phase 1 exit in the roadmap (10 servers). github-mcp-server is
+still not run; it needs a read-only token. One open server bug was found
+(lost updates in mcp-knowledge-graph). It has not been reported upstream yet,
+so the Phase 2 exit is not met.
+
 ## Run 2026-10-17
 
 ### Setup
@@ -212,3 +221,48 @@ reported upstream yet.
 ### Gate status
 
 A clean pass for the server. Both tool defects are fixed on `main`.
+
+## Run 2026-10-19: `lost_update` rerun on mcp-knowledge-graph
+
+### Setup
+
+- Linux container, Node 22.22.0. mcp-loadtest from `main` at `47edb55`,
+  release build. This build counts a lost control write; the 2026-10-18
+  knowledge-graph run predates that.
+- `mcp-knowledge-graph` 1.3.2, still the latest npm release. Same setup as
+  the 2026-10-18 run: every process got `--memory-path <scratch>/store`, and
+  every call passed `location = "global"`.
+- `lost_update` with 8 sessions × 5 writes, through `aim_memory_store`
+  (one entity named by `{marker}`) and `aim_memory_read_all`. Each run started
+  from a fresh store. After each run, the entities in `memory.jsonl` were
+  counted independently.
+
+### Results
+
+| Run | Lost updates | Control write | Write errors | Entities in file |
+|---|---|---|---|---|
+| 1 | 38 of 40 | lost | 0 | 2 |
+| 2 | 34 of 36 | lost | 4: `Unexpected non-whitespace character after JSON at position 93` | 2 |
+| 3 | 38 of 40 | lost | 0 | 2 |
+
+- **Counts agree.** The tool's totals were 39, 35 and 39 lost updates: the
+  missing writes plus the control. The entities left in each file equal the
+  acknowledged writes minus the lost ones (40 − 38, 36 − 34, 40 − 38).
+- **One process is enough.** A separate script started one server process
+  and sent `aim_memory_store` calls in parallel without waiting for replies.
+  With 2, 5 and 10 parallel calls, 3 runs each, every call returned success
+  and exactly 1 entity was left each time. The same calls sent one after
+  another all survive. Every call reads the file before any of them writes,
+  so the last writer wins. A single client that issues parallel tool calls
+  loses writes; no second process is needed.
+- **Across processes, earlier data is lost too.** `fs.writeFile` truncates
+  the file before it writes, so the cross-process case also loses data
+  written before the concurrent phase. The control was lost in every run.
+- **Upstream `main` is the same.** Upstream `main` at `9f6268c` (version
+  1.4.0, not yet on npm) has the same `loadGraph` and `saveGraph` code. The
+  script with 3 parallel calls left 1 entity in 3 of 3 runs against a build
+  of it.
+
+### Gate status
+
+This confirms the 2026-10-18 result. It has not been reported upstream yet.
