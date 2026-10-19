@@ -127,11 +127,11 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
         } => {
             cmd_deadlock::run_deadlock_probe_with_redaction(
                 &server,
-                &tool,
+                tool.as_deref(),
                 concurrent,
                 cmd_run::parse_dur_str(&hang_threshold)?,
                 cmd_run::parse_dur_str(&grace_period)?,
-                &args,
+                args.as_deref(),
                 &output_dir,
                 action_redact_server_identity,
             )

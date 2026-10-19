@@ -47,7 +47,7 @@ pub(super) async fn list_target_tools(args: &Value) -> Result<Value, ToolError> 
     let listed = tokio::time::timeout(budget, async {
         let mut session = target.open().await?;
         let protocol_version = session.server_protocol_version.clone();
-        let tools = session.list_tools().await;
+        let tools = session.list_all_tools().await;
         // Shut down even when tools/list failed so no child is left behind.
         let shutdown = session.shutdown().await;
         let tools = tools.map_err(|e| ToolError::Run(e.to_string()))?;

@@ -56,10 +56,24 @@ fn action_mode_redacts_deadlock_and_doctor_process_output() {
     let output_dir = path_text(temp.path());
     let server = format!("no-such-action-binary --token {SENTINEL}");
 
+    // Without `--tool` the failure comes from the tool-discovery session
+    // (ADR 0030); with it, from the probe's own startup. Both are redacted.
+    let discovery = run_cli(&[
+        "deadlock-probe",
+        "--server",
+        &server,
+        "--output-dir",
+        &output_dir,
+        "--action-redact-server-identity",
+    ]);
+    assert_redacted(&discovery, &server);
+
     let deadlock = run_cli(&[
         "deadlock-probe",
         "--server",
         &server,
+        "--tool",
+        "echo",
         "--concurrent",
         "1",
         "--hang-threshold",
@@ -83,6 +97,30 @@ fn action_mode_redacts_deadlock_and_doctor_process_output() {
     assert_redacted(&doctor, &server);
 }
 
+/// A child that prints its own argv to stderr and exits must not leak it
+/// through the tool-discovery session either: Action mode discards that
+/// session's stderr as it does the probe's.
+#[test]
+fn action_mode_discards_discovery_session_stderr() {
+    let temp = tempdir().expect("tempdir");
+    let output_dir = path_text(temp.path());
+    let python = std::env::var("MCP_LOADTEST_PYTHON").unwrap_or_else(|_| "python".to_string());
+    // `--server` is split on whitespace, so the script has none.
+    let server = format!(
+        "{python} -c __import__('sys').stderr.write(str(__import__('sys').argv)) {SENTINEL}"
+    );
+
+    let discovery = run_cli(&[
+        "deadlock-probe",
+        "--server",
+        &server,
+        "--output-dir",
+        &output_dir,
+        "--action-redact-server-identity",
+    ]);
+    assert_redacted(&discovery, &server);
+}
+
 #[test]
 fn action_mode_redacts_malformed_tool_args_from_parse_errors() {
     let temp = tempdir().expect("tempdir");
@@ -92,6 +130,8 @@ fn action_mode_redacts_malformed_tool_args_from_parse_errors() {
         "deadlock-probe",
         "--server",
         "safe-unused-command",
+        "--tool",
+        "echo",
         "--args",
         ARGS_SENTINEL,
         "--output-dir",

@@ -35,6 +35,7 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0027](0027-lost-update-detector.md)          | Lost-update detector with per-write markers                           | Accepted |
 | [0028](0028-dispatched-release-tagging.md)    | Create release tags from a dispatched workflow                        | Accepted |
 | [0029](0029-restart-stdio-server-killed-by-discovery.md) | Restart a stdio server that the discovery probe killed (extends 0023) | Accepted |
+| [0030](0030-deadlock-probe-picks-a-tool.md)   | `deadlock-probe` picks a read-only tool when `--tool` is omitted     | Accepted |
 
 ## When to write a new ADR
 

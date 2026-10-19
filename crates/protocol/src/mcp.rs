@@ -101,6 +101,9 @@ pub(crate) struct DiscoverResult {
 pub(crate) struct ListToolsResult {
     /// The tools the server exposes.
     pub tools: Vec<Tool>,
+    /// Opaque cursor for the next page; absent on the last page.
+    #[serde(rename = "nextCursor", default)]
+    pub next_cursor: Option<String>,
 }
 
 /// A single tool exposed by an MCP server.
@@ -382,6 +385,15 @@ mod tests {
         assert_eq!(result.tools[0].name, "echo");
         // No `outputSchema` advertised → None (additive, forward-compatible).
         assert!(result.tools[0].output_schema.is_none());
+        // No `nextCursor` → last page.
+        assert!(result.next_cursor.is_none());
+    }
+
+    #[test]
+    fn list_tools_result_next_cursor_parses() {
+        let raw = r#"{"tools":[],"nextCursor":"page-2"}"#;
+        let result: ListToolsResult = serde_json::from_str(raw).unwrap();
+        assert_eq!(result.next_cursor.as_deref(), Some("page-2"));
     }
 
     #[test]
