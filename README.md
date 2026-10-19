@@ -79,7 +79,7 @@ prebuilt archive for Linux x86_64, macOS (Intel and Apple silicon), and
 Windows x86_64, each with a `.sha256` file. On Linux:
 
 ```bash
-V=v0.5.0
+V=v0.6.0
 A=mcp-loadtest-$V-x86_64-unknown-linux-gnu
 curl -fsSLO https://github.com/clytie0x/mcp-loadtest/releases/download/$V/$A.tar.gz
 curl -fsSLO https://github.com/clytie0x/mcp-loadtest/releases/download/$V/$A.tar.gz.sha256
@@ -98,7 +98,7 @@ the release page, and compare the hash with
 Or build the exact tag with Cargo, which takes a few minutes:
 
 ```bash
-cargo install --git https://github.com/clytie0x/mcp-loadtest --tag v0.5.0 --locked mcp-loadtest-cli
+cargo install --git https://github.com/clytie0x/mcp-loadtest --tag v0.6.0 --locked mcp-loadtest-cli
 ```
 
 Then check the installation:
@@ -110,7 +110,14 @@ mcp-loadtest doctor
 
 The project is not published on crates.io (ADR 0031).
 
-## New in v0.5.0
+## New in v0.6.0
+
+- `lost-update --pipelined` finds writes lost inside one server process. One
+  session sends each round of `--concurrent` writes back to back, the way a
+  client running tool calls in parallel does, and matches the replies by id.
+  See [docs/examples/lost-update.md](docs/examples/lost-update.md).
+
+v0.5.0 changed:
 
 - `lost-update` no longer fails a server for refusing a write. A write the
   server answers with `isError`, such as a conflict check rejecting it, was
@@ -139,7 +146,7 @@ v0.4.0 added:
   run, and `protocol_version = "auto"` reaches servers on older Python MCP
   SDKs
 
-Treat `v0.5.0` as published only when the exact tag, GitHub Release, platform
+Treat `v0.6.0` as published only when the exact tag, GitHub Release, platform
 archives, and matching checksum sidecars all exist.
 
 ## Run a load test
@@ -198,9 +205,9 @@ Pin both the Action and binary to the immutable release:
 
 ```yaml
 - name: Probe MCP server for deadlocks
-  uses: clytie0x/mcp-loadtest@v0.5.0
+  uses: clytie0x/mcp-loadtest@v0.6.0
   with:
-    version: v0.5.0
+    version: v0.6.0
     server: "python -m my_mcp"
     args: '["--tool","get_market_data","--concurrent","10","--args","{\"ticker\":\"AAPL\"}"]'
 ```
@@ -336,8 +343,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ## Release status
 
-The source version is `0.5.0`, but source text alone does not prove release
-availability. Consider `v0.5.0` published only after its tag, checksums,
+The source version is `0.6.0`, but source text alone does not prove release
+availability. Consider `v0.6.0` published only after its tag, checksums,
 platform assets, and GitHub Release are verified. The immutable `v0.1.0`
 release remains available under `MIT OR Apache-2.0`; later development is
 Apache-2.0.
