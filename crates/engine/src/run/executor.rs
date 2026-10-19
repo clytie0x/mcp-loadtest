@@ -80,7 +80,7 @@ async fn list_tools_before_startup_deadline(
     if TokioInstant::now() >= deadline {
         return Err(SessionError::StartupTimeout(configured_budget));
     }
-    let result = tokio::time::timeout_at(deadline, session.list_tools()).await;
+    let result = tokio::time::timeout_at(deadline, session.list_all_tools()).await;
     if TokioInstant::now() >= deadline {
         return Err(SessionError::StartupTimeout(configured_budget));
     }

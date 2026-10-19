@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tool qualifies it stops with exit code 1 and a list of the tools.
   `--args` now requires `--tool`. If you relied on the implicit `echo`, pass
   `--tool echo`. See [ADR 0030](docs/adr/0030-deadlock-probe-picks-a-tool.md).
-  The library gains `run::list_all_tools` and
-  `Session::list_tools_page`.
+  The library gains `run::list_all_tools`, `Session::list_tools_page` and
+  `Session::list_all_tools`.
 - `lost_update` also checks the control write in the final read. If it is
   missing, the store dropped data it already held (for example, a writer
   that read a truncated file), and it counts as a lost update with its own
@@ -64,6 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A run's `tools/list` registry and `serve --mcp`'s `list_target_tools`
+  follow `nextCursor`. They read only the first page before, so a server
+  that pages its tools lost the later ones from coverage, from strict-mode
+  schema validation, and from the agent's tool list.
 - Shutting down a server started through a launcher (`uvx`, `npx`, a shell
   script) also kills the server the launcher started. The forced-kill and
   drop paths used to kill only the launcher, so a server that ignored stdin

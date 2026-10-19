@@ -2,12 +2,11 @@
 //! choose a tool before they start a run (the CLI's `deadlock-probe` without
 //! `--tool`, ADR 0030).
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 
 use mcp_loadtest_core::config::{Config, ScenarioConfig, ServerConfig};
 use mcp_loadtest_protocol::mcp::Tool;
-use mcp_loadtest_protocol::session::{Session, SessionError};
+use mcp_loadtest_protocol::session::SessionError;
 use mcp_loadtest_protocol::transport::TransportError;
 use tokio::time::Instant as TokioInstant;
 
@@ -69,7 +68,7 @@ pub async fn list_all_tools(
     .await
     .map_err(redact)?;
 
-    let listed = match tokio::time::timeout_at(startup_deadline, every_page(&mut session)).await {
+    let listed = match tokio::time::timeout_at(startup_deadline, session.list_all_tools()).await {
         Ok(listed) => listed,
         Err(_) => Err(SessionError::StartupTimeout(server.startup_timeout)),
     };
@@ -90,27 +89,4 @@ pub async fn list_all_tools(
         ))));
     }
     Ok(tools)
-}
-
-/// Read `tools/list` pages until the server stops returning `nextCursor`.
-async fn every_page(session: &mut Session) -> Result<Vec<Tool>, SessionError> {
-    let mut tools = Vec::new();
-    let mut seen = HashSet::new();
-    let mut cursor: Option<String> = None;
-    loop {
-        let (page, next) = session.list_tools_page(cursor.as_deref()).await?;
-        tools.extend(page);
-        match next {
-            None => return Ok(tools),
-            Some(next) => {
-                // A cursor seen before would loop until the deadline; say so.
-                if !seen.insert(next.clone()) {
-                    return Err(SessionError::Transport(TransportError::Other(format!(
-                        "`tools/list` returned nextCursor `{next}` twice"
-                    ))));
-                }
-                cursor = Some(next);
-            }
-        }
-    }
 }

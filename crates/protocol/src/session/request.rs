@@ -129,6 +129,32 @@ impl Session {
         Ok((result.tools, result.next_cursor))
     }
 
+    /// Call `tools/list` until the server stops returning `nextCursor` and
+    /// return every page's tools in the server's listed order.
+    ///
+    /// A cursor the server already returned is an error rather than a loop
+    /// that only the caller's deadline would end.
+    pub async fn list_all_tools(&mut self) -> Result<Vec<Tool>, SessionError> {
+        let mut tools = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let (page, next) = self.list_tools_page(cursor.as_deref()).await?;
+            tools.extend(page);
+            let Some(next) = next else {
+                return Ok(tools);
+            };
+            if !seen.insert(next.clone()) {
+                return Err(SessionError::Transport(
+                    crate::transport::TransportError::Other(format!(
+                        "`tools/list` returned nextCursor `{next}` twice"
+                    )),
+                ));
+            }
+            cursor = Some(next);
+        }
+    }
+
     /// Turn on strict args validation for subsequent [`Session::call_tool`]
     /// calls. `schemas` maps each tool's name to its advertised
     /// `inputSchema`. Call once at run start (the caller already has the
