@@ -25,7 +25,7 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0017](0017-session-pool-in-scenario.md)       | Session pool inside the scenario — real `concurrent` (M8)             | Accepted |
 | [0018](0018-multi-version-protocol.md)         | Multi-version MCP protocol strategy (2025-03-26 → 2026-07-28)         | Accepted |
 | [0019](0019-stateless-connection-layer.md)     | Experimental stateless connection layer for MCP 2026-07-28 RC/draft | Accepted; final release truth superseded by 0023 |
-| [0020](0020-publish-to-crates-io.md)           | Proposed crates.io publication (not executed)                         | Deferred 2026-10-19; not in force |
+| [0020](0020-publish-to-crates-io.md)           | Proposed crates.io publication (not executed)                         | Superseded by 0031 |
 | [0021](0021-trace-record-replay.md)            | Trace record + replay: JSONL `mcp-trace/1`, redaction, replay diff    | Accepted |
 | [0022](0022-six-crate-workspace.md)            | Six-crate layered workspace (core/protocol/engine/output/facade/cli)  | Accepted; seven crates since v0.2.0 (outcome note) |
 | [0023](0023-mcp-2026-final-reconciliation.md)  | Reconcile the scoped MCP 2026-07-28 implementation to the final tag   | Accepted; scoped experimental implementation |
@@ -36,6 +36,7 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0028](0028-dispatched-release-tagging.md)    | Create release tags from a dispatched workflow                        | Accepted |
 | [0029](0029-restart-stdio-server-killed-by-discovery.md) | Restart a stdio server that the discovery probe killed (extends 0023) | Accepted |
 | [0030](0030-deadlock-probe-picks-a-tool.md)   | `deadlock-probe` picks a read-only tool when `--tool` is omitted     | Accepted |
+| [0031](0031-defer-crates-io-publication.md)   | Defer crates.io publication (supersedes 0020)                         | Accepted |
 
 ## When to write a new ADR
 
