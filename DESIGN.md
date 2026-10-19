@@ -1,6 +1,6 @@
 # mcp-loadtest — Design Document
 
-**Status:** `v0.4.0` release candidate built on the immutable `v0.3.0`
+**Status:** `v0.4.1` release candidate built on the immutable `v0.4.0`
 baseline. A source version does not prove external availability; exact tag and
 GitHub Release actions remain gated by `docs/RELEASE.md`.
 **Author:** Teerapat Vatpitak

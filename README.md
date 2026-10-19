@@ -79,7 +79,7 @@ prebuilt archive for Linux x86_64, macOS (Intel and Apple silicon), and
 Windows x86_64, each with a `.sha256` file. On Linux:
 
 ```bash
-V=v0.4.0
+V=v0.4.1
 A=mcp-loadtest-$V-x86_64-unknown-linux-gnu
 curl -fsSLO https://github.com/clytie0x/mcp-loadtest/releases/download/$V/$A.tar.gz
 curl -fsSLO https://github.com/clytie0x/mcp-loadtest/releases/download/$V/$A.tar.gz.sha256
@@ -98,7 +98,7 @@ the release page, and compare the hash with
 Or build the exact tag with Cargo, which takes a few minutes:
 
 ```bash
-cargo install --git https://github.com/clytie0x/mcp-loadtest --tag v0.4.0 --locked mcp-loadtest-cli
+cargo install --git https://github.com/clytie0x/mcp-loadtest --tag v0.4.1 --locked mcp-loadtest-cli
 ```
 
 Then check the installation:
@@ -110,7 +110,14 @@ mcp-loadtest doctor
 
 The project is not published on crates.io (ADR 0031).
 
-## New in v0.4.0
+## New in v0.4.1
+
+- The GitHub Action downloads its binary from `clytie0x/mcp-loadtest`, the
+  repository's current name, instead of the owner's old name. Move `uses:`
+  pins to `@v0.4.1`.
+- The Install section above gives the download and checksum commands.
+
+v0.4.0 added:
 
 - `deadlock-probe` without `--tool` picks a tool the server marks read-only
   that takes no required arguments, so the first probe needs only the server
@@ -123,7 +130,7 @@ The project is not published on crates.io (ADR 0031).
   run, and `protocol_version = "auto"` reaches servers on older Python MCP
   SDKs
 
-Treat `v0.4.0` as published only when the exact tag, GitHub Release, platform
+Treat `v0.4.1` as published only when the exact tag, GitHub Release, platform
 archives, and matching checksum sidecars all exist.
 
 ## Run a load test
@@ -182,9 +189,9 @@ Pin both the Action and binary to the immutable release:
 
 ```yaml
 - name: Probe MCP server for deadlocks
-  uses: clytie0x/mcp-loadtest@v0.4.0
+  uses: clytie0x/mcp-loadtest@v0.4.1
   with:
-    version: v0.4.0
+    version: v0.4.1
     server: "python -m my_mcp"
     args: '["--tool","get_market_data","--concurrent","10","--args","{\"ticker\":\"AAPL\"}"]'
 ```
@@ -316,8 +323,8 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ## Release status
 
-The source version is `0.4.0`, but source text alone does not prove release
-availability. Consider `v0.4.0` published only after its tag, checksums,
+The source version is `0.4.1`, but source text alone does not prove release
+availability. Consider `v0.4.1` published only after its tag, checksums,
 platform assets, and GitHub Release are verified. The immutable `v0.1.0`
 release remains available under `MIT OR Apache-2.0`; later development is
 Apache-2.0.
