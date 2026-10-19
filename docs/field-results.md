@@ -12,13 +12,14 @@ and a short `sustained` load): the 9 in the 2026-10-17 table and
 `lost_update` only, so they do not count toward it. github-mcp-server is still
 not run; it needs a read-only token.
 
-Four open server bugs have been found, all lost updates:
+Five open server bugs have been found, all lost updates:
 mcp-knowledge-graph 1.3.2, `@modelcontextprotocol/server-filesystem` 2.0.0,
-`@kazuph/mcp-taskmanager` 1.1.1, and mcp-shrimp-task-manager 1.0.21. The
-middle two are from the 2026-10-19 file-backed run and shrimp from the
-pipelined run that followed. On 2026-10-19 the project owner decided not to
-report the mcp-knowledge-graph bug upstream. None of the four has been
-reported, so the Phase 2 exit is not met.
+`@kazuph/mcp-taskmanager` 1.1.1, mcp-shrimp-task-manager 1.0.21, and
+basic-memory 0.23.2. server-filesystem and mcp-taskmanager are from the
+2026-10-19 file-backed run, the last two from the pipelined run that
+followed. On 2026-10-19 the project owner decided not to report the
+mcp-knowledge-graph bug upstream. None of the five has been reported, so
+the Phase 2 exit is not met.
 
 ## Run 2026-10-17
 
@@ -442,6 +443,7 @@ No new server bug; this confirms the two open ones with the tool itself.
 | `@modelcontextprotocol/server-memory` 2.0.0 | same | 8 processes, 2 runs | PASS |
 | mcp-knowledge-graph 1.3.2 | `aim_memory_store` → `aim_memory_read_all` | pipelined, 3 runs | FAIL: 12, 12 and 11 of 15 lost |
 | mcp-shrimp-task-manager 1.0.21 | `split_tasks` (`updateMode: append`, one task named by `{marker}`) → `list_tasks` (`status: all`) | pipelined, 3 runs | FAIL: 12 of 15 lost every run; `tasks.json` held 4 tasks |
+| basic-memory 0.23.2 (PyPI, `uvx --prerelease=allow`) | `edit_note` (`operation: append` to one note) → `read_note` | pipelined, 3 runs | FAIL: 6, 9 and 7 of 15 lost, 18/18 calls ok |
 
 - **server-memory 2.0.0 keeps every write** in both modes: the in-process
   mutex and the lock file from the 1.0.0 fix are still in place.
@@ -453,6 +455,13 @@ No new server bug; this confirms the two open ones with the tool itself.
   all returned success, one task was saved: the file held the control
   plus 3. Upstream `main` at `8a3be6b` (also 1.0.21) has the same
   `readTasks`/`writeTasks`.
+- **basic-memory loses appends to one note.** `edit_entity_with_content`
+  reads the note file, builds the new content and writes it back, with
+  awaits in between and no lock per note. A separate script with the
+  official Python SDK (mcp 2.2.0) sent 5 appends at once; all succeeded and
+  3, 4 and 2 lines were kept in three runs. Upstream `main` at `ad9158a` has
+  the same path. Installing 0.23.2 with `uvx` needs `--prerelease=allow`,
+  because it depends on a fastmcp pre-release.
 
 ### Tool defects found
 
@@ -462,4 +471,5 @@ No new server bug; this confirms the two open ones with the tool itself.
 
 ### Gate status
 
-One new open server bug, in mcp-shrimp-task-manager; not reported upstream.
+Two new open server bugs, in mcp-shrimp-task-manager and basic-memory; not
+reported upstream.
