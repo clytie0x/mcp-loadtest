@@ -27,6 +27,8 @@ detectors and supply the latency baseline, not as a goal of their own.
 Exit: `scripts/ci-checks.sh` passes on `main` and the `v0.3.0` Release exists
 with all platform archives and checksums.
 
+Status: met; `v0.3.0` is published.
+
 ## Phase 1: Evidence against real servers
 
 - Run `deadlock-probe`, `race_check`, and a short `sustained` load against at
@@ -40,6 +42,8 @@ with all platform archives and checksums.
 Exit: 10 servers recorded. Decision gate: if no real server bug is found
 and no tool defect turns up, pause the project instead of adding features.
 
+Status: met; see [field-results.md](docs/field-results.md#phase-1-status).
+
 ## Phase 2: Turn findings into proof
 
 - For each confirmed server bug, report it upstream with a minimal
@@ -50,6 +54,10 @@ and no tool defect turns up, pause the project instead of adding features.
 
 Exit: at least one upstream issue or PR acknowledged by its maintainers.
 
+Status: not met. Three open server bugs are recorded in
+[field-results.md](docs/field-results.md#phase-1-status); none has been
+reported upstream.
+
 ## Phase 3: Lower adoption friction
 
 - Verify the GitHub Action end to end on a public sample repository.
@@ -59,3 +67,8 @@ Exit: at least one upstream issue or PR acknowledged by its maintainers.
 
 Exit: a new user reaches a first verdict in under five minutes, measured on
 a clean machine.
+
+Status: met on 2026-10-19 with `v0.4.1`. The Action demo repository passes
+on a pinned tag ([#7](https://github.com/clytie0x/mcp-loadtest/issues/7)).
+A clean cloud session went from download to first verdict in about 10
+seconds ([#8](https://github.com/clytie0x/mcp-loadtest/issues/8)).

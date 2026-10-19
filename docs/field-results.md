@@ -10,8 +10,13 @@ and a short `sustained` load): the 9 in the 2026-10-17 table and
 `mcp-server-time` 2026.10.19. This meets the Phase 1 exit in the roadmap.
 `mcp-knowledge-graph` 1.3.2 and `mcp-server-sqlite` 2025.4.25 were run with
 `lost_update` only, so they do not count toward it. github-mcp-server is still
-not run; it needs a read-only token. One open server bug was found (lost
-updates in mcp-knowledge-graph). It has not been reported upstream yet, so the
+not run; it needs a read-only token.
+
+Three open server bugs have been found, all lost updates:
+mcp-knowledge-graph 1.3.2, `@modelcontextprotocol/server-filesystem` 2.0.0,
+and `@kazuph/mcp-taskmanager` 1.1.1. The last two are from the 2026-10-19
+file-backed run. On 2026-10-19 the project owner decided not to report the
+mcp-knowledge-graph bug upstream. None of the three has been reported, so the
 Phase 2 exit is not met.
 
 ## Run 2026-10-17
@@ -178,7 +183,6 @@ was already fixed upstream before this run, so no report was filed.
 This is the first open server bug the detectors have found. It has not been
 reported upstream yet.
 
-
 ## Run 2026-10-18: `lost_update` on mcp-server-sqlite
 
 ### Setup
@@ -267,7 +271,8 @@ A clean pass for the server. Both tool defects are fixed on `main`.
 
 ### Gate status
 
-This confirms the 2026-10-18 result. It has not been reported upstream yet.
+This confirms the 2026-10-18 result. On 2026-10-19 the project owner decided
+not to report it upstream.
 
 ## Run 2026-10-19: mcp-server-time
 
@@ -308,3 +313,80 @@ This confirms the 2026-10-18 result. It has not been reported upstream yet.
 
 A clean pass, and the tenth server with the full set.
 
+## Run 2026-10-19: `lost_update` on file-backed servers
+
+### Setup
+
+- Linux container, Node 22.22.0. mcp-loadtest `v0.4.1` release binary.
+- Five servers that keep state in a file or a database, each installed from
+  npm at the version below and run against a scratch store:
+  `@modelcontextprotocol/server-filesystem` 2.0.0 (also 1.0.0 and 2026.8.31
+  for comparison), `@kazuph/mcp-taskmanager` 1.1.1, `obsidian-mcp` 2.0.1,
+  `mcp-memory-keeper` 0.14.1, and `@iachilles/memento` 0.7.0.
+- `lost_update` with 8 sessions × 5 writes, 3 runs per server, fresh store
+  each run. Every session is its own server process sharing the store. After
+  each run, the store was counted independently.
+- A separate script started one server process and sent N write calls in
+  parallel without waiting for replies, then read the store once: N = 2, 5,
+  10 with 3 runs each for server-filesystem 2.0.0 and mcp-taskmanager; one
+  run each for N = 2, 5, 10 on server-filesystem 1.0.0 and N = 2, 10 on
+  2026.8.31.
+
+| Server | Write → read | Lost updates (3 runs) | Write errors | One process, N parallel |
+|---|---|---|---|---|
+| server-filesystem 2.0.0 | `edit_file` (replace `END` with `{marker}\nEND` in one file) → `read_text_file` | 18 of 30, 16 of 30, 21 of 31 | 10, 10, 9 | 1 of N kept |
+| server-filesystem 1.0.0 | same | 15 of 25, 21 of 32, 19 of 29 | 15, 8, 11 | 1 of N kept |
+| server-filesystem 2026.8.31 | same | 30 of 40, 29 of 40, 31 of 40 | 0 | 1 of N kept |
+| mcp-taskmanager 1.1.1 | `request_planning` (`originalRequest = {marker}`) → `list_requests` | 39, 37 and 34 of 40, control lost every run | 0 | 1 of N kept |
+| obsidian-mcp 2.0.1 | `obsidian_edit_note` (append to one note) → `obsidian_read_note` | 0 | 16, 9, 14 (`REVISION_CONFLICT`) | 1 acknowledged, rest refused |
+| mcp-memory-keeper 0.14.1 | `context_save` → `context_search_all` | 0 (PASS) | 0 | not run |
+| memento 0.7.0 | `create_entities` → `read_graph` | not run | control write: `fetch failed` | not run |
+
+### Results
+
+- **server-filesystem loses parallel edits to one file.** `edit_file` reads
+  the file, applies the edits, and writes it back with no lock. With one
+  server process and 2, 5 or 10 parallel `edit_file` calls on the same file,
+  every call returned success with a diff, and only one edit was in the file,
+  in all 9 runs on 2.0.0 and in every run on 1.0.0 and 2026.8.31. Upstream
+  `main` at `51b6382` has the same code. An agent that issues parallel tool calls
+  against one file loses edits with no error.
+- **Node 24 behaves the same.** server-filesystem 2.0.0 declares
+  `node >= 24`, and the runs above used Node 22.22.0. Repeated on Node
+  24.22.0: one process kept 1 of 2, 5 and 10 parallel edits; across
+  processes, 3 runs lost 17, 13 and 15 edits with 9, 10 and 11 write errors,
+  and 2 of the 3 files ended torn.
+- **Since 1.0.0 it can also tear the file.** 1.0.0 replaced the temp-file
+  rename with an in-place `truncate(0)` and write. Across processes, a reader
+  can now see the file empty or half-written. That is where the write errors
+  come from: `Could not find exact match for edit: END`. It also leaves torn
+  content. In 2 of 3 extra 2.0.0 runs, and 2 of 3 1.0.0 runs, the file ended
+  with a partial marker line or a second `END` line. 2026.8.31 lost as many
+  writes but never errored or tore the file.
+- **mcp-taskmanager loses requests, and the request IDs it returns are
+  wrong.** Every tool loads `tasks.json`, changes it, and saves it with no
+  lock. Across processes the control request was lost in every run. The
+  requests left in the file match the tool's count (1, 3 and 6). With one
+  process and N parallel `request_planning` calls, every call succeeded,
+  and the file kept exactly one request, `req-N`. Upstream `main` at
+  `e9f09ab` (1.1.1) is the same.
+- **obsidian-mcp handles it correctly.** Conflicting appends are refused
+  with `REVISION_CONFLICT: The note changed after it was read`, and every
+  acknowledged write was in the note (24, 31 and 26 of them, plus the
+  control). mcp-loadtest still reports this as `FAIL (incomplete lost-update
+  check)`; see the defects below.
+- **mcp-memory-keeper passes.** It stores items in SQLite; all 41 rows
+  (40 writes and the control) were in `context.db` after the last run.
+- **memento was not run.** Its first write downloads an embedding model,
+  which the container's network policy blocks.
+
+### Tool defects found
+
+| Defect | Status |
+|---|---|
+| `lost_update` reports any write error as `incomplete` and fails the run, even when the server refused the write and every acknowledged write was read back (obsidian-mcp). The note says only `returned isError`, without the server's error text. | Open, [#31](https://github.com/clytie0x/mcp-loadtest/issues/31) |
+
+### Gate status
+
+Two new open server bugs, in server-filesystem and mcp-taskmanager. Neither
+has been reported upstream yet.
