@@ -7,6 +7,7 @@
 //! (initialize) and `connection` (discover) modules can drive the wire.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -102,6 +103,15 @@ fn validate_final_stateless_result(method: &str, result: &Value) -> Result<(), S
     }
 
     Ok(())
+}
+
+/// One call's outcome in [`Session::call_tools_pipelined`].
+#[derive(Debug)]
+pub struct PipelinedCall {
+    /// The call's result, or `None` if no reply arrived before the deadline.
+    pub result: Option<Result<CallToolResult, SessionError>>,
+    /// Time from the start of the batch to this call's reply.
+    pub elapsed: Duration,
 }
 
 impl Session {
@@ -235,6 +245,86 @@ impl Session {
         self.request("tools/call", &params).await
     }
 
+    /// Send every call in `calls` back to back on this session, then read
+    /// the replies, matching them to calls by id in whatever order they
+    /// arrive (ADR 0033). Each call is encoded and checked exactly as
+    /// [`Session::call_tool`] would.
+    ///
+    /// Replies are read until `deadline`; a call still unanswered then has
+    /// `result: None`. Its reply may still arrive later, so the session must
+    /// not be used again after any `None`. A send or receive failure, or a
+    /// reply whose id matches no outstanding call, fails the whole batch.
+    /// Needs a stream transport ([`Transport::send_request`]).
+    ///
+    /// [`Transport::send_request`]: crate::transport::Transport::send_request
+    pub async fn call_tools_pipelined(
+        &mut self,
+        calls: &[(&str, &Value)],
+        deadline: tokio::time::Instant,
+    ) -> Result<Vec<PipelinedCall>, SessionError> {
+        let started = tokio::time::Instant::now();
+        let mut replies: Vec<PipelinedCall> = calls
+            .iter()
+            .map(|_| PipelinedCall {
+                result: None,
+                elapsed: Duration::ZERO,
+            })
+            .collect();
+        let mut outstanding: HashMap<u64, usize> = HashMap::new();
+        for (index, (name, arguments)) in calls.iter().enumerate() {
+            if let Some(schemas) = &self.tool_schemas
+                && let Err(err) = strict::check_args(schemas, name, arguments)
+            {
+                replies[index].result = Some(Err(err));
+                continue;
+            }
+            let params = CallToolParams {
+                name,
+                arguments,
+                request_state: None,
+                input_responses: None,
+            };
+            let (id, body) = self.encode_request("tools/call", &params)?;
+            self.transport.send_request(&body).await?;
+            outstanding.insert(id, index);
+        }
+
+        while !outstanding.is_empty() {
+            let Ok(body) = tokio::time::timeout_at(deadline, self.transport.recv_response()).await
+            else {
+                break;
+            };
+            let env: ResponseEnvelope = serde_json::from_str(&body?)?;
+            let Some(index) = env.id.as_u64().and_then(|id| outstanding.remove(&id)) else {
+                return Err(SessionError::Transport(
+                    crate::transport::TransportError::Other(format!(
+                        "pipelined reply has id {} that matches no outstanding request",
+                        env.id
+                    )),
+                ));
+            };
+            let id = env.id.as_u64().unwrap_or_default();
+            let name = calls[index].0;
+            let result = self
+                .decode_response::<ToolCallRound>("tools/call", id, env)
+                .and_then(|round| match round {
+                    ToolCallRound::Complete(result) => Ok(result),
+                    ToolCallRound::InputRequired(_) => Err(SessionError::AdditionalInputRequired),
+                })
+                .and_then(|result| {
+                    if let Some(schemas) = &self.tool_output_schemas {
+                        strict::check_result(schemas, name, &result)?;
+                    }
+                    Ok(result)
+                });
+            replies[index] = PipelinedCall {
+                result: Some(result),
+                elapsed: started.elapsed(),
+            };
+        }
+        Ok(replies)
+    }
+
     pub(super) async fn request<P, R>(
         &mut self,
         method: &str,
@@ -262,6 +352,26 @@ impl Session {
         P: Serialize + ?Sized,
         R: DeserializeOwned,
     {
+        let (id, body) = self.encode_request(method, params)?;
+        let mut response_body = self.transport.request(&body).await?;
+        if let Some((stale_id, slot)) = stale {
+            let first: ResponseEnvelope = serde_json::from_str(&response_body)?;
+            if first.id.as_u64() == Some(stale_id) {
+                let late =
+                    std::mem::replace(&mut response_body, self.transport.recv_response().await?);
+                *slot = Some(late);
+            }
+        }
+
+        let env: ResponseEnvelope = serde_json::from_str(&response_body)?;
+        self.decode_response(method, id, env)
+    }
+
+    /// Serialize one request, consuming the next id.
+    fn encode_request<P>(&mut self, method: &str, params: &P) -> Result<(u64, String), SessionError>
+    where
+        P: Serialize + ?Sized,
+    {
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
 
@@ -288,17 +398,20 @@ impl Session {
                 params,
             })?,
         };
-        let mut response_body = self.transport.request(&body).await?;
-        if let Some((stale_id, slot)) = stale {
-            let first: ResponseEnvelope = serde_json::from_str(&response_body)?;
-            if first.id.as_u64() == Some(stale_id) {
-                let late =
-                    std::mem::replace(&mut response_body, self.transport.recv_response().await?);
-                *slot = Some(late);
-            }
-        }
+        Ok((id, body))
+    }
 
-        let env: ResponseEnvelope = serde_json::from_str(&response_body)?;
+    /// Check one response envelope against the request `id` it answers and
+    /// decode its result.
+    fn decode_response<R>(
+        &self,
+        method: &str,
+        id: u64,
+        env: ResponseEnvelope,
+    ) -> Result<R, SessionError>
+    where
+        R: DeserializeOwned,
+    {
         if env.jsonrpc != JSONRPC_VERSION {
             return Err(SessionError::InvalidJsonRpcVersion { got: env.jsonrpc });
         }

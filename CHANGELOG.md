@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `lost-update --pipelined` (`pipelined` in config and `serve --mcp`) checks
+  for writes lost inside one server process. One session sends each round of
+  `--concurrent` writes back to back on a stdio stream and matches the
+  replies by id, the way clients that run tool calls in parallel do
+  (ADR 0033). It found the server-filesystem and mcp-taskmanager losses that
+  the default mode could only show across processes.
+- A pinned fixture for the truncate-then-rewrite store that
+  server-filesystem 1.0.0 introduced (`mock-store.py --mode inplace`), which
+  `lost_update` must catch dropping data stored before the run.
+
 ## [0.5.0] — Release contents
 
 This section describes the source contents intended for `v0.5.0`. Its presence

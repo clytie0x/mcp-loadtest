@@ -56,7 +56,12 @@ pub(super) fn lost_update_def() -> Value {
                     "type": "integer",
                     "minimum": 1,
                     "default": 5,
-                    "description": "Writes each session sends."
+                    "description": "Writes each session sends (with pipelined: the number of rounds)."
+                },
+                "pipelined": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Use one session (one server process) and send each round of `concurrent` writes back to back, as a client running tool calls in parallel does. Needs server_command."
                 }
             },
             "required": ["server_command", "write_tool", "write_args", "read_tool"]
@@ -77,7 +82,19 @@ pub(super) async fn lost_update(args: &Value) -> Result<Value, ToolError> {
             .ok_or_else(|| ToolError::InvalidArgs("write_args (object) is required".into()))?,
         read_tool: required_str(args, "read_tool")?,
         read_args: args.get("read_args").cloned().unwrap_or(json!({})),
+        pipelined: match args.get("pipelined") {
+            None => false,
+            Some(v) => v
+                .as_bool()
+                .ok_or_else(|| ToolError::InvalidArgs("pipelined must be a boolean".into()))?,
+        },
     };
+    if plan.pipelined && args.get("server_url").is_some() {
+        return Err(ToolError::InvalidArgs(
+            "pipelined needs server_command: it sends requests back to back on one stdio stream"
+                .into(),
+        ));
+    }
     if let Some(message) = plan.validation_error() {
         return Err(ToolError::InvalidArgs(message.into()));
     }

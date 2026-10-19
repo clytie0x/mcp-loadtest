@@ -189,6 +189,58 @@ async fn lost_update_reports_missing_writes_with_a_reason() {
 }
 
 #[tokio::test]
+async fn pipelined_lost_update_finds_a_race_inside_one_process() {
+    let scratch = Scratch::new("lost-update-pipelined");
+    let store = scratch.0.join("store");
+    let result = dispatch(
+        "lost_update",
+        &json!({
+            "server_command": format!(
+                "{} --mode racy --concurrent --store {}",
+                server_command("mock-store.py"),
+                store.display()
+            ),
+            "startup_timeout_ms": STARTUP_TIMEOUT_MS,
+            "write_tool": "append",
+            "write_args": { "item": "{marker}" },
+            "read_tool": "read",
+            "concurrent": 5,
+            "writes_per_worker": 2,
+            "pipelined": true,
+            "report_dir": scratch.0.join("runs").display().to_string(),
+        }),
+    )
+    .await
+    .expect("lost_update");
+
+    assert_verdict(&result, false);
+    assert!(
+        result["lost_update_count"].as_u64().unwrap_or(0) > 0,
+        "{result:#}"
+    );
+}
+
+#[tokio::test]
+async fn pipelined_lost_update_needs_a_stdio_target() {
+    let err = dispatch(
+        "lost_update",
+        &json!({
+            "server_url": "https://example.com/mcp",
+            "write_tool": "append",
+            "write_args": { "item": "{marker}" },
+            "read_tool": "read",
+            "pipelined": true,
+        }),
+    )
+    .await
+    .expect_err("pipelining needs one stdio stream");
+    assert!(
+        err.to_string().contains("pipelined needs server_command"),
+        "{err}"
+    );
+}
+
+#[tokio::test]
 async fn env_and_working_dir_reach_every_server_process() {
     let scratch = Scratch::new("target-env");
     // A relative store path only lands in the scratch directory if both
@@ -403,6 +455,16 @@ async fn run_tools_reject_bad_arguments_before_spawning() {
                 "write_tool": "append",
                 "write_args": { "item": "no placeholder" },
                 "read_tool": "read",
+            }),
+        ),
+        (
+            "lost_update",
+            json!({
+                "server_command": "python x.py",
+                "write_tool": "append",
+                "write_args": { "item": "{marker}" },
+                "read_tool": "read",
+                "pipelined": "yes",
             }),
         ),
         (

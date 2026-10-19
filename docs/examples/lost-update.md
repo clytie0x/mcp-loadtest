@@ -77,6 +77,41 @@ mcp-loadtest lost-update \
   --read-tool read_graph --concurrent 8 --writes-per-worker 5
 ```
 
+## One process: `--pipelined`
+
+The default mode needs sessions that share a store, and finds races between
+server processes. Many servers also lose writes inside one process when a
+client sends several tool calls without waiting for each reply, which is what
+clients that run tool calls in parallel do. `--pipelined` checks that case:
+it uses one session, and each of `--writes-per-worker` rounds sends
+`--concurrent` writes back to back, then matches the replies by id. A server
+that keeps its state in memory works too.
+
+```bash
+mkdir -p /tmp/lu && printf 'END\n' > /tmp/lu/log.txt
+mcp-loadtest lost-update --pipelined \
+  --server "npx -y @modelcontextprotocol/server-filesystem@2.0.0 /tmp/lu" \
+  --write-tool edit_file \
+  --write-args '{"path":"/tmp/lu/log.txt","edits":[{"oldText":"END","newText":"{marker}\nEND"}]}' \
+  --read-tool read_text_file --read-args '{"path":"/tmp/lu/log.txt"}' \
+  --concurrent 5 --writes-per-worker 3
+```
+
+```text
+  status:    FAIL (12 lost updates)
+  requests:  18 total · 18 ok · 0 errors (0.00%)
+  note:      lost updates: 12 of 15 acknowledged writes to `edit_file` are missing from `read_text_file` (first: …)
+```
+
+Every edit succeeded, and in each round of 5 only one was left in the file.
+A server that serializes its writes passes, and one that rejects conflicting
+writes passes with the refusals counted (see
+[field-results.md](../field-results.md)). Pipelining needs a stdio server:
+an HTTP target already shares one process across sessions in the default
+mode. If a round's replies do not all arrive within the hang threshold plus
+the grace period, the check stops there and reports the missing ones as
+deadlocks.
+
 ## Reading the result
 
 | Outcome | Meaning |
@@ -106,7 +141,7 @@ above becomes one call:
 
 The raised `startup_timeout_ms` covers the first `npx` download. The tool
 returns `passed`, `failure_reasons`, `lost_update_count`, and
-`refused_write_count`.
+`refused_write_count`. Add `"pipelined": true` for the one-process mode.
 
 For a server that is already running, pass `server_url` instead of
 `server_command`. Every session then shares that one process, which is

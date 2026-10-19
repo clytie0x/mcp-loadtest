@@ -38,6 +38,7 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0030](0030-deadlock-probe-picks-a-tool.md)   | `deadlock-probe` picks a read-only tool when `--tool` is omitted     | Accepted |
 | [0031](0031-defer-crates-io-publication.md)   | Defer crates.io publication (supersedes 0020)                         | Accepted |
 | [0032](0032-lost-update-refused-writes.md)    | A refused write is not a lost-update error (amends 0027)              | Accepted |
+| [0033](0033-pipelined-lost-update.md)         | Pipelined lost-update check on one session (extends 0027)             | Accepted |
 
 ## When to write a new ADR
 

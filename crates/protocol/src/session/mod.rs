@@ -21,6 +21,8 @@ use crate::transport::{Transport, TransportError};
 mod connection;
 mod lifecycle;
 mod request;
+
+pub use request::PipelinedCall;
 mod strict;
 mod version;
 

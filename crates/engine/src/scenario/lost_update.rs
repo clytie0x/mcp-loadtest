@@ -18,6 +18,11 @@
 //! acknowledged, so it counts as refused, not as an error or a loss
 //! (ADR 0032). A server that rejects conflicting writes is doing its job.
 //!
+//! With `pipelined` (ADR 0033) there is one session and one server
+//! process: each of `writes_per_worker` rounds sends `concurrent` writes
+//! back to back before reading any reply, the way a client that runs tool
+//! calls in parallel does. `{worker}` is the write's slot in its round.
+//!
 //! Because step 1 already proved that state is shared, a final read that
 //! shows none of the acknowledged markers (for example, a store corrupted by
 //! interleaved writes) counts every one of them as lost.
@@ -54,6 +59,9 @@ pub struct LostUpdate {
     pub read_tool: String,
     /// Arguments for `read_tool`, passed verbatim.
     pub read_args: Value,
+    /// Send each round's writes pipelined on the run session instead of
+    /// from `concurrent` separate sessions (ADR 0033).
+    pub pipelined: bool,
 }
 
 #[async_trait]
@@ -61,6 +69,9 @@ impl Scenario for LostUpdate {
     async fn drive(&self, session: &mut Session, ctx: &RunContext) -> ScenarioOutcome {
         if let Some(message) = self.validation_error() {
             return invalid_plan(message);
+        }
+        if self.pipelined {
+            return self.drive_pipelined(session, ctx).await;
         }
         let Some(factory) = ctx.session_factory.clone() else {
             return invalid_plan(
@@ -189,21 +200,8 @@ impl Scenario for LostUpdate {
         })
         .await;
         merge(&mut outcome, pooled);
-        if outcome.refused_write_count > 0 {
-            let text = first_refusal
-                .lock()
-                .ok()
-                .and_then(|first| first.clone())
-                .unwrap_or_default();
-            let refused = outcome.refused_write_count;
-            outcome.notes.push(format!(
-                "lost_update: the server refused {refused} concurrent write{} \
-                 (`{}` returned isError: {text}); a refused write was never acknowledged, \
-                 so it is not expected in the read",
-                if refused == 1 { "" } else { "s" },
-                self.write_tool
-            ));
-        }
+        let first_refusal = first_refusal.lock().ok().and_then(|first| first.clone());
+        self.note_refusals(&mut outcome, first_refusal);
 
         // 3. One read; every acknowledged marker must be in it.
         let acknowledged = match acknowledged.lock() {
@@ -216,54 +214,8 @@ impl Scenario for LostUpdate {
                 return outcome;
             }
         };
-        if acknowledged.is_empty() {
-            outcome.error_count += 1;
-            outcome
-                .notes
-                .push("lost_update inconclusive: no concurrent write was acknowledged".to_owned());
-            return outcome;
-        }
-        let Some(read) = call_strict(
-            session,
-            &self.read_tool,
-            &self.read_args,
-            ctx,
-            &mut outcome,
-            "final read",
-        )
-        .await
-        else {
-            return outcome;
-        };
-        let missing: Vec<&String> = acknowledged
-            .iter()
-            .filter(|mark| !contains(&read, mark))
-            .collect();
-        // The control write was acknowledged and read back before any
-        // concurrent write, so losing it now means the store dropped data it
-        // already held (for example, a writer that read a truncated file).
-        let control_lost = !contains(&read, &control);
-        outcome.lost_update_count = missing.len() as u64 + u64::from(control_lost);
-        if control_lost {
-            outcome.notes.push(format!(
-                "lost update: the control write `{control}`, read back before the concurrent \
-                 writes began, is missing from `{}`; the store dropped data it already held",
-                self.read_tool
-            ));
-        }
-        if !missing.is_empty() {
-            let preview: Vec<&str> = missing.iter().take(5).map(|m| m.as_str()).collect();
-            outcome.notes.push(format!(
-                "lost updates: {} of {} acknowledged writes to `{}` are missing from `{}` \
-                 (first: {})",
-                missing.len(),
-                acknowledged.len(),
-                self.write_tool,
-                self.read_tool,
-                preview.join(", ")
-            ));
-        }
-        outcome
+        self.verify(session, ctx, outcome, &acknowledged, &control)
+            .await
     }
 
     fn config_schema(&self) -> Value {
@@ -297,6 +249,11 @@ impl Scenario for LostUpdate {
                 "read_args": {
                     "type": "object",
                     "description": "Arguments for read_tool, passed verbatim."
+                },
+                "pipelined": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Send each round of `concurrent` writes back to back on one session (one server process) instead of from separate sessions."
                 }
             },
             "required": ["write_tool", "write_args", "read_tool"]
@@ -309,6 +266,233 @@ impl Scenario for LostUpdate {
 }
 
 impl LostUpdate {
+    /// The pipelined mode (ADR 0033): control, then rounds of in-flight
+    /// writes, all on the run session.
+    async fn drive_pipelined(&self, session: &mut Session, ctx: &RunContext) -> ScenarioOutcome {
+        let nonce = format!("{:08x}", rand::random::<u32>());
+        let mut outcome = ScenarioOutcome::default();
+
+        // 1. Control: with one process, this proves only that the read
+        //    observes writes.
+        let control = marker(&nonce, "c", 0);
+        let control_args = render(&self.write_args, "control", 0, &control);
+        if call_strict(
+            session,
+            &self.write_tool,
+            &control_args,
+            ctx,
+            &mut outcome,
+            "control write",
+        )
+        .await
+        .is_none()
+        {
+            outcome
+                .notes
+                .push("lost_update: control write failed; cannot run the check".to_owned());
+            return outcome;
+        }
+        match call_strict(
+            session,
+            &self.read_tool,
+            &self.read_args,
+            ctx,
+            &mut outcome,
+            "control read",
+        )
+        .await
+        {
+            Some(read) if contains(&read, &control) => {}
+            Some(_) => {
+                outcome.error_count += 1;
+                outcome.notes.push(format!(
+                    "lost_update inconclusive: `{}` did not show the marker `{}` wrote \
+                     just before on the same session, so the read does not return what \
+                     the write stored",
+                    self.read_tool, self.write_tool
+                ));
+                return outcome;
+            }
+            None => return outcome,
+        }
+
+        // 2. Rounds of `concurrent` writes in flight at once.
+        let mut acknowledged = Vec::new();
+        let mut first_refusal = None;
+        let budget = ctx.hang_threshold.saturating_add(ctx.grace_period);
+        for seq in 0..self.writes_per_worker {
+            if ctx.is_cancelled() {
+                outcome
+                    .notes
+                    .push(format!("cancelled before pipelined round {seq}"));
+                break;
+            }
+            let marks: Vec<String> = (0..self.concurrent)
+                .map(|slot| marker(&nonce, &slot.to_string(), seq))
+                .collect();
+            let args: Vec<Value> = marks
+                .iter()
+                .enumerate()
+                .map(|(slot, mark)| render(&self.write_args, &slot.to_string(), seq, mark))
+                .collect();
+            let calls: Vec<(&str, &Value)> = args
+                .iter()
+                .map(|args| (self.write_tool.as_str(), args))
+                .collect();
+            let deadline = tokio::time::Instant::now() + budget;
+            let replies = match session.call_tools_pipelined(&calls, deadline).await {
+                Ok(replies) => replies,
+                Err(err) => {
+                    outcome.total_calls += calls.len() as u64;
+                    outcome.error_count += 1;
+                    ctx.metrics
+                        .record_tool(&self.write_tool, budget, classify_error(&err));
+                    outcome.notes.push(format!(
+                        "pipelined round {seq}: `{}` failed: {err}",
+                        self.write_tool
+                    ));
+                    return outcome;
+                }
+            };
+            let mut unanswered = 0u32;
+            for (slot, (reply, mark)) in replies.into_iter().zip(marks).enumerate() {
+                outcome.total_calls += 1;
+                let label = format!("write worker={slot} seq={seq}");
+                let tool = self.write_tool.as_str();
+                match reply.result {
+                    None => {
+                        unanswered += 1;
+                        outcome.deadlock_count += 1;
+                        outcome.hung_for_ms.push(budget.as_millis());
+                        ctx.metrics.record_tool(tool, budget, CallOutcome::Deadlock);
+                        outcome.notes.push(format!(
+                            "deadlock: {label} tool={tool} hung_for={}ms",
+                            budget.as_millis()
+                        ));
+                    }
+                    Some(Ok(result)) if is_logical_tool_error(&result) => {
+                        outcome.refused_write_count += 1;
+                        ctx.metrics
+                            .record_tool(tool, reply.elapsed, CallOutcome::ServerError);
+                        first_refusal.get_or_insert_with(|| error_text(&result));
+                    }
+                    Some(Ok(_)) if reply.elapsed >= ctx.hang_threshold => {
+                        outcome.hang_count += 1;
+                        ctx.metrics
+                            .record_tool(tool, reply.elapsed, CallOutcome::Hang);
+                        outcome
+                            .notes
+                            .push(format!("{label}: `{tool}` exceeded the hang threshold"));
+                    }
+                    Some(Ok(_)) => {
+                        outcome.successful_calls += 1;
+                        ctx.metrics
+                            .record_tool(tool, reply.elapsed, CallOutcome::Success);
+                        acknowledged.push(mark);
+                    }
+                    Some(Err(err)) => {
+                        outcome.error_count += 1;
+                        ctx.metrics
+                            .record_tool(tool, reply.elapsed, classify_error(&err));
+                        outcome
+                            .notes
+                            .push(format!("{label}: `{tool}` failed: {err}"));
+                    }
+                }
+            }
+            if unanswered > 0 {
+                outcome.notes.push(format!(
+                    "lost_update: {unanswered} pipelined write{} still unanswered after {}ms; \
+                     stopping, since their replies may still arrive on this session",
+                    if unanswered == 1 { "" } else { "s" },
+                    budget.as_millis()
+                ));
+                return outcome;
+            }
+        }
+        self.note_refusals(&mut outcome, first_refusal);
+
+        // 3. One read; every acknowledged marker must be in it.
+        self.verify(session, ctx, outcome, &acknowledged, &control)
+            .await
+    }
+
+    /// Step 3: one read on the run session must show every acknowledged
+    /// marker and the control.
+    async fn verify(
+        &self,
+        session: &mut Session,
+        ctx: &RunContext,
+        mut outcome: ScenarioOutcome,
+        acknowledged: &[String],
+        control: &str,
+    ) -> ScenarioOutcome {
+        if acknowledged.is_empty() {
+            outcome.error_count += 1;
+            outcome
+                .notes
+                .push("lost_update inconclusive: no concurrent write was acknowledged".to_owned());
+            return outcome;
+        }
+        let Some(read) = call_strict(
+            session,
+            &self.read_tool,
+            &self.read_args,
+            ctx,
+            &mut outcome,
+            "final read",
+        )
+        .await
+        else {
+            return outcome;
+        };
+        let missing: Vec<&String> = acknowledged
+            .iter()
+            .filter(|mark| !contains(&read, mark))
+            .collect();
+        // The control write was acknowledged and read back before any
+        // concurrent write, so losing it now means the store dropped data it
+        // already held (for example, a writer that read a truncated file).
+        let control_lost = !contains(&read, control);
+        outcome.lost_update_count = missing.len() as u64 + u64::from(control_lost);
+        if control_lost {
+            outcome.notes.push(format!(
+                "lost update: the control write `{control}`, read back before the concurrent \
+                 writes began, is missing from `{}`; the store dropped data it already held",
+                self.read_tool
+            ));
+        }
+        if !missing.is_empty() {
+            let preview: Vec<&str> = missing.iter().take(5).map(|m| m.as_str()).collect();
+            outcome.notes.push(format!(
+                "lost updates: {} of {} acknowledged writes to `{}` are missing from `{}` \
+                 (first: {})",
+                missing.len(),
+                acknowledged.len(),
+                self.write_tool,
+                self.read_tool,
+                preview.join(", ")
+            ));
+        }
+        outcome
+    }
+
+    /// One note for every write the server refused, quoting the first.
+    fn note_refusals(&self, outcome: &mut ScenarioOutcome, first_refusal: Option<String>) {
+        if outcome.refused_write_count == 0 {
+            return;
+        }
+        let text = first_refusal.unwrap_or_default();
+        let refused = outcome.refused_write_count;
+        outcome.notes.push(format!(
+            "lost_update: the server refused {refused} concurrent write{} \
+             (`{}` returned isError: {text}); a refused write was never acknowledged, \
+             so it is not expected in the read",
+            if refused == 1 { "" } else { "s" },
+            self.write_tool
+        ));
+    }
+
     /// Why this plan cannot run, if it cannot.
     pub fn validation_error(&self) -> Option<&'static str> {
         if self.concurrent < 2 {
@@ -567,6 +751,7 @@ mod tests {
             write_args: json!({ "item": "{marker}" }),
             read_tool: "read".into(),
             read_args: json!({}),
+            pipelined: false,
         };
         assert_eq!(plan.validation_error(), None);
         plan.write_args = json!({ "item": "fixed" });

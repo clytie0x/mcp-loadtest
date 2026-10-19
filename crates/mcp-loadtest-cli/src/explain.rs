@@ -117,8 +117,13 @@ Algorithm:
 
 Writes are real: point it at a disposable store. For stdio servers each
 session is its own process, so they must share a file, database, or service.
-Tunable knobs: --concurrent, --writes-per-worker, --read-args, --env,
-  --startup-timeout.
+
+--pipelined uses one session and one server process instead: each of
+--writes-per-worker rounds sends --concurrent writes back to back before
+reading any reply, as a client running tool calls in parallel does. This
+finds races inside one process, and needs no shared store.
+Tunable knobs: --concurrent, --writes-per-worker, --pipelined, --read-args,
+  --env, --startup-timeout.
 `run` with `[scenario] type = \"lost_update\"` is the config form; see
 docs/examples/lost-update.md.
 ";

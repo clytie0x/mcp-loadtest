@@ -53,6 +53,7 @@ pub async fn run_race_check(
 
 /// Run `lost_update`: `concurrent` sessions each send `writes_per_worker`
 /// uniquely-marked writes, and one read must return every acknowledged one.
+/// With `pipelined`, one session sends each round's writes back to back.
 #[allow(clippy::too_many_arguments)] // mirrors the CLI flags
 pub async fn run_lost_update(
     target: &DetectTarget,
@@ -62,6 +63,7 @@ pub async fn run_lost_update(
     read_args: &str,
     concurrent: u32,
     writes_per_worker: u32,
+    pipelined: bool,
     output_dir: &Path,
 ) -> Result<()> {
     let scenario = LostUpdate {
@@ -71,6 +73,7 @@ pub async fn run_lost_update(
         write_args: parse_json_object("--write-args", write_args)?,
         read_tool: read_tool.to_owned(),
         read_args: parse_json_object("--read-args", read_args)?,
+        pipelined,
     };
     if let Some(message) = scenario.validation_error() {
         anyhow::bail!("invalid lost-update plan: {message}");

@@ -161,6 +161,7 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
             read_args,
             concurrent,
             writes_per_worker,
+            pipelined,
             env,
             startup_timeout,
             output_dir,
@@ -178,6 +179,7 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
                 &read_args,
                 concurrent,
                 writes_per_worker,
+                pipelined,
                 &output_dir,
             )
             .await

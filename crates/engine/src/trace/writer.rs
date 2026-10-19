@@ -277,6 +277,13 @@ impl<T: Transport> Transport for TracingTransport<T> {
         Ok(response)
     }
 
+    async fn send_request(&mut self, body: &str) -> Result<(), TransportError> {
+        let method = format::method_of(body);
+        self.writer
+            .record(Direction::ClientToServer, method.as_deref(), body);
+        self.inner.send_request(body).await
+    }
+
     async fn recv_response(&mut self) -> Result<String, TransportError> {
         // No request goes out, so there is no method to attribute the
         // late frame to.

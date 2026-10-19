@@ -64,6 +64,17 @@ pub trait Transport: Send {
     /// Send a notification body (no `id`, no response expected).
     async fn notify(&mut self, body: &str) -> Result<(), TransportError>;
 
+    /// Send a request body without waiting for its response; the caller
+    /// reads replies later through [`Transport::recv_response`] and matches
+    /// them by id. Lets several requests be in flight on one stream
+    /// (pipelined `lost_update`, ADR 0033). Request/response transports
+    /// (HTTP / SSE) inherit this default, which reports it as unsupported.
+    async fn send_request(&mut self, _body: &str) -> Result<(), TransportError> {
+        Err(TransportError::Other(
+            "pipelined requests need a stream transport (stdio)".into(),
+        ))
+    }
+
     /// Read the next response frame **without** sending anything.
     ///
     /// Used to drain the late reply to a request whose caller stopped

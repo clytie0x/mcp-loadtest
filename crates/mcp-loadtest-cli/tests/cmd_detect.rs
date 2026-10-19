@@ -73,6 +73,7 @@ async fn lost_update_fails_a_racy_store_and_passes_a_safe_one_via_env() {
         "{}",
         4,
         3,
+        false,
         &dir.path().join("runs"),
     )
     .await
@@ -99,11 +100,36 @@ async fn lost_update_fails_a_racy_store_and_passes_a_safe_one_via_env() {
         "{}",
         4,
         3,
+        false,
         &dir.path().join("runs"),
     )
     .await
     .expect("a safe store keeps every write");
     assert!(wrote_a_report(&dir.path().join("runs")));
+}
+
+#[tokio::test]
+async fn pipelined_lost_update_fails_a_store_that_races_in_one_process() {
+    let dir = tempdir().expect("tempdir");
+    let store = dir.path().join("store");
+    let err = run_lost_update(
+        &target(
+            "mock-store.py",
+            "--mode racy --concurrent",
+            vec![format!("MOCK_STORE_PATH={}", store.display())],
+        ),
+        "append",
+        r#"{"item":"{marker}"}"#,
+        "read",
+        "{}",
+        5,
+        2,
+        true,
+        &dir.path().join("runs"),
+    )
+    .await
+    .expect_err("writes in flight on one racy process are lost");
+    assert!(err.to_string().contains("lost update"), "{err:#}");
 }
 
 #[tokio::test]
@@ -117,6 +143,7 @@ async fn lost_update_rejects_a_plan_without_a_marker() {
         "{}",
         4,
         3,
+        false,
         dir.path(),
     )
     .await

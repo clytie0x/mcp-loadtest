@@ -390,3 +390,34 @@ A clean pass, and the tenth server with the full set.
 
 Two new open server bugs, in server-filesystem and mcp-taskmanager. Neither
 has been reported upstream yet.
+
+## Run 2026-10-19: pipelined `lost_update` on one process
+
+### Setup
+
+- Linux container, Node 22.22.0. mcp-loadtest built from the branch that
+  adds `--pipelined` (ADR 0033), debug build.
+- The same packages and write/read pairs as the file-backed run above, each
+  started once: `lost-update --pipelined --concurrent 5 --writes-per-worker 3`,
+  so 3 rounds of 5 writes sent back to back on one session. Fresh store each
+  run.
+
+### Results
+
+| Server | Runs | Result |
+|---|---|---|
+| server-filesystem 2.0.0 (`edit_file`) | 3 | FAIL every run: 12 of 15 acknowledged writes lost, 18/18 calls ok |
+| mcp-taskmanager 1.1.1 (`request_planning`) | 3 | FAIL every run: 12 of 15 acknowledged writes lost, 18/18 calls ok |
+| mcp-memory-keeper 0.14.1 (`context_save`) | 2 | PASS: every write read back |
+| obsidian-mcp 2.0.1 (`obsidian_edit_note`) | 2 | PASS: 12 of 15 writes refused with `REVISION_CONFLICT`, every acknowledged one read back |
+
+- **The tool now finds these directly.** One write of each round of 5
+  survived, the same 1-of-N the separate script showed in the file-backed
+  run. That run needed the script because the default mode gives each
+  writer its own process.
+- **The servers that passed before still pass.** memory-keeper serializes
+  writes through SQLite; obsidian-mcp refuses the conflicting ones.
+
+### Gate status
+
+No new server bug; this confirms the two open ones with the tool itself.
