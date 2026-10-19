@@ -1,7 +1,14 @@
 # 20. Publish to crates.io (supersedes 0015)
 
 Date: 2026-07-07
-Status: Proposed, not approved or executed
+Status: Deferred (2026-10-19); not approved or executed
+
+**Decision (2026-10-19):** the maintainer deferred crates.io publication. No
+crate is published and no name is reserved. Users install from the immutable
+GitHub Release archives or with `cargo install --git ... --tag`. Revisit when
+an external user asks for a registry dependency (the ADR 0015 trigger).
+ADR 0015 stays in force until then. The proposal below is kept unchanged as a
+record.
 
 **Release-truth annotation (2026-07-28):** no crate has been published under
 this decision. [`docs/RELEASE.md`](../RELEASE.md) explicitly excludes
