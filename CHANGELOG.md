@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] — Release contents
+
+This section describes the source contents intended for `v0.4.1`. Its presence
+does not prove that the tag, checksums, platform archives, or GitHub Release
+have been published; verify those artifacts independently.
+
+### Fixed
+
+- The composite Action downloaded its binary from
+  `Teerapat-Vatpitak/mcp-loadtest`, the repository's name before its owner
+  was renamed to `clytie0x`. GitHub redirects the old name for now, but
+  whoever registers it later would control which binary the Action installs,
+  and the `.sha256` comes from the same place, so the check would not catch
+  it. The Action, README, docs, crate metadata, and schema `$id`s now use
+  `clytie0x/mcp-loadtest`.
+
+### Changed
+
+- The README Install section gives the download, checksum, and PATH steps
+  for each platform instead of only the Cargo command.
+
 ## [0.4.0] — Release contents
 
 This section describes the source contents intended for `v0.4.0`. Its presence
@@ -636,6 +657,7 @@ transport failures, and configured performance thresholds.
   deadlock commit, and criterion microbenchmarks
   (record/histogram/session_loopback/hang_detect).
 
-[Unreleased]: https://github.com/Teerapat-Vatpitak/mcp-loadtest/compare/v0.4.0...main
-[0.4.0]: https://github.com/Teerapat-Vatpitak/mcp-loadtest/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/Teerapat-Vatpitak/mcp-loadtest/compare/v0.2.0...v0.3.0
+[Unreleased]: https://github.com/clytie0x/mcp-loadtest/compare/v0.4.1...main
+[0.4.1]: https://github.com/clytie0x/mcp-loadtest/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/clytie0x/mcp-loadtest/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/clytie0x/mcp-loadtest/compare/v0.2.0...v0.3.0

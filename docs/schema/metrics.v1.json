@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Teerapat-Vatpitak/mcp-loadtest/blob/main/docs/schema/metrics.v1.json",
+  "$id": "https://github.com/clytie0x/mcp-loadtest/blob/main/docs/schema/metrics.v1.json",
   "title": "mcp-loadtest metrics.json (v1)",
   "description": "Machine-readable run report emitted by the JSON reporter (`crate::report::json`). Mirrors `ReportView` field-for-field: Durations are fractional milliseconds, `started_at` is ISO 8601 UTC. Forward-compatible: additive fields may appear in later patch versions, so consumers should tolerate unknown properties.",
   "type": "object",

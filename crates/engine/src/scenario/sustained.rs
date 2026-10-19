@@ -29,7 +29,7 @@
 //! multiplexed. Trade-offs (per-worker child processes vs. the process
 //! sampler, N-spawn start-up cost) are recorded in ADR 0017.
 //!
-//! [1]: https://github.com/Teerapat-Vatpitak/mcp-loadtest/blob/main/DESIGN.md#8-built-in-scenarios
+//! [1]: https://github.com/clytie0x/mcp-loadtest/blob/main/DESIGN.md#8-built-in-scenarios
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};

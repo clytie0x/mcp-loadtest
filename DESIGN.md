@@ -1,6 +1,6 @@
 # mcp-loadtest — Design Document
 
-**Status:** `v0.4.0` release candidate built on the immutable `v0.3.0`
+**Status:** `v0.4.1` release candidate built on the immutable `v0.4.0`
 baseline. A source version does not prove external availability; exact tag and
 GitHub Release actions remain gated by `docs/RELEASE.md`.
 **Author:** Teerapat Vatpitak
@@ -591,7 +591,7 @@ The README at publish must lead with the deadlock demo (replicated Vibe-Trading 
 | --- | ----------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | 1   | Crate name              | **`mcp-loadtest`** (lib) + **`mcp-loadtest-cli`** (bin)                                                        | descriptive, discoverable, doesn't pigeonhole to "bench"                                                                |
 | 2   | License                 | **Apache-2.0** after `v0.1.0`; the immutable `v0.1.0` release remains `MIT OR Apache-2.0`                      | Explicit patent grant for infrastructure and enterprise use; historical release terms remain unchanged                  |
-| 3   | Repo location           | **`github.com/Teerapat-Vatpitak/mcp-loadtest`**                                                                | personal handle for now; transfer to `mcp-tools/` org if/when sister projects emerge                                   |
+| 3   | Repo location           | **`github.com/clytie0x/mcp-loadtest`** (the owner was renamed from `Teerapat-Vatpitak`)                                                                | personal handle for now; transfer to `mcp-tools/` org if/when sister projects emerge                                   |
 | 4   | MCP protocol versioning | stable handshake revisions at runtime; strict validation is opt-in; `2026-07-28` remains an explicitly pinned experimental implementation of a reconciled final-spec subset | test deployed revisions without overstating the implemented or conformance-tested surface |
 | 5   | `deadlock_probe`        | both a quick subcommand and `[scenario] type = "deadlock_probe"` under config-driven `run`; N>1 uses a synchronized independent-session gate | subcommand for newcomer UX, scenario for CI |
 | 6   | Server stderr           | stdio inherits stderr by default; config-driven `run --capture-stderr` writes `server-stderr.log`, and `--tee-stderr` also mirrors it | accurate opt-in capture without pretending the quick subcommand persists it |

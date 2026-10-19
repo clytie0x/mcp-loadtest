@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/Teerapat-Vatpitak/mcp-loadtest/main/docs/schema/config.v1.json",
+  "$id": "https://raw.githubusercontent.com/clytie0x/mcp-loadtest/main/docs/schema/config.v1.json",
   "title": "mcp-loadtest configuration",
   "description": "Editor-facing schema for mcp-loadtest v0.2 TOML configuration. Runtime semantic validation remains authoritative for network policy and cross-field numeric relationships.",
   "type": "object",

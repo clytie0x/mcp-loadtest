@@ -12,8 +12,8 @@
 //! --config bench.toml`); the library API below is for embedding it in a
 //! Rust test/CI harness. See the [README] and [DESIGN] for the full story.
 //!
-//! [README]: https://github.com/Teerapat-Vatpitak/mcp-loadtest/blob/main/README.md
-//! [DESIGN]: https://github.com/Teerapat-Vatpitak/mcp-loadtest/blob/main/DESIGN.md
+//! [README]: https://github.com/clytie0x/mcp-loadtest/blob/main/README.md
+//! [DESIGN]: https://github.com/clytie0x/mcp-loadtest/blob/main/DESIGN.md
 //!
 //! # Library example
 //!
@@ -55,7 +55,7 @@
 //! # }
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/mcp-loadtest/0.4.0")]
+#![doc(html_root_url = "https://docs.rs/mcp-loadtest/0.4.1")]
 
 pub mod analysis;
 pub mod config;
