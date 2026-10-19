@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `deadlock-probe` no longer defaults `--tool` to `echo`, which most real
+  servers do not have. Without `--tool` it lists the server's tools on one
+  session (following `nextCursor`), shuts that session down, and probes the
+  first tool the server marks read-only (`readOnlyHint: true`, not
+  `destructiveHint: true`) that has no required arguments, with `{}`. It
+  prints the choice and that the marks are the server's own hints. When no
+  tool qualifies it stops with exit code 1 and a list of the tools.
+  `--args` now requires `--tool`. If you relied on the implicit `echo`, pass
+  `--tool echo`. See [ADR 0030](docs/adr/0030-deadlock-probe-picks-a-tool.md).
+  The library gains `run::list_all_tools` and
+  `Session::list_tools_page`.
 - `lost_update` also checks the control write in the final read. If it is
   missing, the store dropped data it already held (for example, a writer
   that read a truncated file), and it counts as a lost update with its own

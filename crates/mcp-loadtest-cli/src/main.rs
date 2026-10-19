@@ -147,9 +147,12 @@ pub(crate) enum Cmd {
         /// Server command, parsed shell-style: `"python -m my_mcp"` or `"node dist/server.js"`.
         #[arg(short, long)]
         server: String,
-        /// Tool name to call.
-        #[arg(long, default_value = "echo")]
-        tool: String,
+        /// Tool name to call. If omitted, the probe lists the server's tools
+        /// and calls the first one the server marks read-only (and not
+        /// destructive) that has no required arguments, with `{}`. The
+        /// choice is printed; those marks are the server's own hints.
+        #[arg(long)]
+        tool: Option<String>,
         /// Number of synchronized independent-session `tools/call` probes
         /// (quick default; the `run` config form defaults to 20).
         #[arg(long, default_value_t = 5)]
@@ -160,9 +163,9 @@ pub(crate) enum Cmd {
         /// Grace period after threshold before classifying as deadlock.
         #[arg(long, default_value = "5s")]
         grace_period: String,
-        /// Tool arguments as a JSON object.
-        #[arg(long, default_value = "{}")]
-        args: String,
+        /// Tool arguments as a JSON object (default `{}`). Requires --tool.
+        #[arg(long, requires = "tool")]
+        args: Option<String>,
         /// Where to write the per-run dir.
         #[arg(long, default_value = "./runs")]
         output_dir: PathBuf,

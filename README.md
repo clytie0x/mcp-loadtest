@@ -22,6 +22,15 @@ the first concurrent `tools/call`. The focused probe reproduces that failure
 class directly:
 
 ```bash
+mcp-loadtest deadlock-probe --server "python -m my_mcp"
+```
+
+Without `--tool`, the probe calls the first tool the server marks read-only
+(and not destructive) that has no required arguments, and prints its name.
+Those marks are the server's own hints. If no tool qualifies, it lists the
+tools and stops. Choose the tool and its arguments with `--tool` and `--args`:
+
+```bash
 mcp-loadtest deadlock-probe \
   --server "python -m my_mcp" \
   --tool get_market_data \

@@ -14,9 +14,12 @@ use thiserror::Error;
 
 use crate::scenario::Scenario;
 
+pub use discover::list_all_tools;
+
 pub mod factory;
 
 mod connect;
+mod discover;
 mod executor;
 mod thresholds;
 

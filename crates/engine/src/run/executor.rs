@@ -57,11 +57,11 @@ fn trace_server_identity(server: &ServerConfig, redact_server_identity: bool) ->
     }
 }
 
-fn redacted_server_error() -> RunError {
+pub(super) fn redacted_server_error() -> RunError {
     RunError::Config("server startup failed (identity redacted by Action)".into())
 }
 
-fn redacted_stderr_path() -> PathBuf {
+pub(super) fn redacted_stderr_path() -> PathBuf {
     PathBuf::from(if cfg!(windows) { "NUL" } else { "/dev/null" })
 }
 

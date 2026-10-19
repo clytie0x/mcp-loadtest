@@ -111,6 +111,24 @@ impl Session {
         Ok(result.tools)
     }
 
+    /// Call `tools/list` for one page: the first page when `cursor` is
+    /// `None`, otherwise the page after a previous `nextCursor`. Returns the
+    /// page's tools and the server's `nextCursor`, `None` on the last page.
+    ///
+    /// [`Session::list_tools`] reads only the first page; callers that need
+    /// every tool loop on this until the cursor is `None`.
+    pub async fn list_tools_page(
+        &mut self,
+        cursor: Option<&str>,
+    ) -> Result<(Vec<Tool>, Option<String>), SessionError> {
+        let params = match cursor {
+            Some(cursor) => serde_json::json!({ "cursor": cursor }),
+            None => serde_json::json!({}),
+        };
+        let result: ListToolsResult = self.request("tools/list", &params).await?;
+        Ok((result.tools, result.next_cursor))
+    }
+
     /// Turn on strict args validation for subsequent [`Session::call_tool`]
     /// calls. `schemas` maps each tool's name to its advertised
     /// `inputSchema`. Call once at run start (the caller already has the

@@ -280,6 +280,9 @@ Design choices:
 # Targeted smoke for the Vibe-Trading bug class
 mcp-loadtest deadlock-probe --server "python -m my_mcp" --tool get_market_data
 
+# Same, letting the probe pick a tool the server marks read-only (ADR 0030)
+mcp-loadtest deadlock-probe --server "python -m my_mcp"
+
 # Run from config file
 mcp-loadtest run --config bench.toml
 
@@ -1477,7 +1480,15 @@ Defaults: this subcommand probes quickly (N=5, hang_threshold=2s,
   grace_period=5s); `run` with `[scenario] type = "deadlock_probe"` is the
   thorough CI form (N=20, hang_threshold=5s, grace_period=10s).
 
-Tunable knobs: --concurrent, --hang-threshold, --grace-period.
+Tool: --tool NAME, with --args JSON (default {}). Without --tool, one
+  session lists the server's tools (every page) and is shut down, then the
+  probe calls the first tool the server marks readOnlyHint=true and not
+  destructiveHint=true whose inputSchema has no required arguments, with {},
+  and prints the choice. These marks are the server's own hints, not
+  guarantees. If no tool qualifies, it lists the tools and exits non-zero.
+  --args without --tool is an error.
+
+Tunable knobs: --tool, --args, --concurrent, --hang-threshold, --grace-period.
 See DESIGN.md §15.2 for the spec source (and its "Shipped reality" note).
 ```
 
