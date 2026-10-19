@@ -12,12 +12,13 @@ and a short `sustained` load): the 9 in the 2026-10-17 table and
 `lost_update` only, so they do not count toward it. github-mcp-server is still
 not run; it needs a read-only token.
 
-Three open server bugs have been found, all lost updates:
+Four open server bugs have been found, all lost updates:
 mcp-knowledge-graph 1.3.2, `@modelcontextprotocol/server-filesystem` 2.0.0,
-and `@kazuph/mcp-taskmanager` 1.1.1. The last two are from the 2026-10-19
-file-backed run. On 2026-10-19 the project owner decided not to report the
-mcp-knowledge-graph bug upstream. None of the three has been reported, so the
-Phase 2 exit is not met.
+`@kazuph/mcp-taskmanager` 1.1.1, and mcp-shrimp-task-manager 1.0.21. The
+middle two are from the 2026-10-19 file-backed run and shrimp from the
+pipelined run that followed. On 2026-10-19 the project owner decided not to
+report the mcp-knowledge-graph bug upstream. None of the four has been
+reported, so the Phase 2 exit is not met.
 
 ## Run 2026-10-17
 
