@@ -50,6 +50,10 @@ pub struct MetricsDocumentV1 {
     /// Acknowledged writes missing from the read-back state. Omitted when zero.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub lost_update_count: u64,
+    /// Writes the server refused with `isError` in a lost-update check.
+    /// Omitted when zero.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub refused_write_count: u64,
     /// Incomplete pooled-worker count. Omitted when zero.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub incomplete_worker_count: u64,
@@ -100,6 +104,7 @@ impl From<&Report> for MetricsDocumentV1 {
             hang_count: report.scenario_outcome.hang_count,
             divergence_count: report.scenario_outcome.divergence_count,
             lost_update_count: report.scenario_outcome.lost_update_count,
+            refused_write_count: report.scenario_outcome.refused_write_count,
             incomplete_worker_count: report.scenario_outcome.incomplete_worker_count,
             teardown_failure_count: report.scenario_outcome.teardown_failure_count,
             trace_path: report

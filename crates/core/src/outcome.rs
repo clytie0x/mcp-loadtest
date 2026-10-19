@@ -30,6 +30,12 @@ pub struct ScenarioOutcome {
     /// fails the run; omitted from JSON when zero.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub lost_update_count: u64,
+    /// Writes the server refused with an `isError` result (`lost_update`
+    /// scenario). A refused write was never acknowledged, so it is not
+    /// expected in the read and does not count as an error; omitted from
+    /// JSON when zero.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub refused_write_count: u64,
     /// Requested pooled workers that never completed their assigned workload.
     ///
     /// Spawn failures, cancelled spawns and worker-task failures increment

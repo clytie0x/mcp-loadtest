@@ -14,6 +14,10 @@
 //!    the control's included, must appear in it; each missing one counts as a
 //!    lost update.
 //!
+//! A concurrent write the server refuses with an `isError` result was never
+//! acknowledged, so it counts as refused, not as an error or a loss
+//! (ADR 0032). A server that rejects conflicting writes is doing its job.
+//!
 //! Because step 1 already proved that state is shared, a final read that
 //! shows none of the acknowledged markers (for example, a store corrupted by
 //! interleaved writes) counts every one of them as lost.
@@ -31,7 +35,7 @@ use crate::scenario::{
 use mcp_loadtest_core::metrics::CallOutcome;
 use mcp_loadtest_protocol::Session;
 use mcp_loadtest_protocol::hang_detector::{HangOutcome, hang_detect};
-use mcp_loadtest_protocol::mcp::CallToolResult;
+use mcp_loadtest_protocol::mcp::{CallToolResult, Content};
 
 /// Placeholder replaced by a run-unique, fixed-width marker per write.
 pub const MARKER_PLACEHOLDER: &str = "{marker}";
@@ -89,7 +93,7 @@ impl Scenario for LostUpdate {
         };
         let control = marker(&nonce, "c", 0);
         let control_args = render(&self.write_args, "control", 0, &control);
-        let written = call(
+        let written = call_strict(
             &mut probe,
             &self.write_tool,
             &control_args,
@@ -106,7 +110,7 @@ impl Scenario for LostUpdate {
                 .push("lost_update: control write failed; cannot run the check".to_owned());
             return outcome;
         }
-        match call(
+        match call_strict(
             session,
             &self.read_tool,
             &self.read_args,
@@ -134,12 +138,15 @@ impl Scenario for LostUpdate {
         // 2. Concurrent uniquely-marked writes across independent sessions.
         let acknowledged = Arc::new(Mutex::new(Vec::new()));
         let shared = Arc::clone(&acknowledged);
+        let first_refusal: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let shared_refusal = Arc::clone(&first_refusal);
         let write_tool = Arc::new(self.write_tool.clone());
         let write_args = Arc::new(self.write_args.clone());
         let writes = self.writes_per_worker;
         let nonce = Arc::new(nonce);
         let pooled = pool::drive_pooled(ctx, self.concurrent, move |worker, mut session, wctx| {
             let acknowledged = Arc::clone(&shared);
+            let first_refusal = Arc::clone(&shared_refusal);
             let write_tool = Arc::clone(&write_tool);
             let write_args = Arc::clone(&write_args);
             let nonce = Arc::clone(&nonce);
@@ -154,17 +161,21 @@ impl Scenario for LostUpdate {
                     let mark = marker(&nonce, &worker.to_string(), seq);
                     let args = render(&write_args, &worker.to_string(), seq, &mark);
                     let label = format!("write worker={worker} seq={seq}");
-                    if call(&mut session, &write_tool, &args, &wctx, &mut out, &label)
-                        .await
-                        .is_some()
-                    {
-                        match acknowledged.lock() {
+                    match call(&mut session, &write_tool, &args, &wctx, &mut out, &label).await {
+                        Called::Ok(_) => match acknowledged.lock() {
                             Ok(mut marks) => marks.push(mark),
                             Err(_) => {
                                 out.error_count += 1;
                                 out.notes.push("marker collector lock poisoned".to_owned());
                             }
+                        },
+                        Called::Refused(text) => {
+                            out.refused_write_count += 1;
+                            if let Ok(mut first) = first_refusal.lock() {
+                                first.get_or_insert(text);
+                            }
                         }
+                        Called::Failed => {}
                     }
                 }
                 teardown::shutdown_session(
@@ -178,6 +189,21 @@ impl Scenario for LostUpdate {
         })
         .await;
         merge(&mut outcome, pooled);
+        if outcome.refused_write_count > 0 {
+            let text = first_refusal
+                .lock()
+                .ok()
+                .and_then(|first| first.clone())
+                .unwrap_or_default();
+            let refused = outcome.refused_write_count;
+            outcome.notes.push(format!(
+                "lost_update: the server refused {refused} concurrent write{} \
+                 (`{}` returned isError: {text}); a refused write was never acknowledged, \
+                 so it is not expected in the read",
+                if refused == 1 { "" } else { "s" },
+                self.write_tool
+            ));
+        }
 
         // 3. One read; every acknowledged marker must be in it.
         let acknowledged = match acknowledged.lock() {
@@ -197,7 +223,7 @@ impl Scenario for LostUpdate {
                 .push("lost_update inconclusive: no concurrent write was acknowledged".to_owned());
             return outcome;
         }
-        let Some(read) = call(
+        let Some(read) = call_strict(
             session,
             &self.read_tool,
             &self.read_args,
@@ -297,9 +323,19 @@ impl LostUpdate {
     }
 }
 
-/// Run one call through the hang detector, recording metrics and outcome
-/// counters. Returns the result only for a timely, non-error response.
-async fn call(
+/// How one call ended.
+enum Called {
+    Ok(CallToolResult),
+    /// The tool returned `isError`; carries its text. Not yet counted in
+    /// `out`, because only the caller knows whether a refusal is an error.
+    Refused(String),
+    /// Hang, deadlock or call error, already counted and noted.
+    Failed,
+}
+
+/// Like [`call`], but a refusal is an error: the control write and the
+/// reads must succeed for the check to mean anything.
+async fn call_strict(
     session: &mut Session,
     tool: &str,
     args: &Value,
@@ -307,6 +343,28 @@ async fn call(
     out: &mut ScenarioOutcome,
     label: &str,
 ) -> Option<CallToolResult> {
+    match call(session, tool, args, ctx, out, label).await {
+        Called::Ok(result) => Some(result),
+        Called::Refused(text) => {
+            out.error_count += 1;
+            out.notes
+                .push(format!("{label}: `{tool}` returned isError: {text}"));
+            None
+        }
+        Called::Failed => None,
+    }
+}
+
+/// Run one call through the hang detector, recording metrics and outcome
+/// counters.
+async fn call(
+    session: &mut Session,
+    tool: &str,
+    args: &Value,
+    ctx: &RunContext,
+    out: &mut ScenarioOutcome,
+    label: &str,
+) -> Called {
     let started = Instant::now();
     let result = hang_detect(
         session.call_tool(tool, args),
@@ -320,22 +378,19 @@ async fn call(
             out.successful_calls += 1;
             ctx.metrics
                 .record_tool(tool, duration, CallOutcome::Success);
-            Some(result)
+            Called::Ok(result)
         }
-        HangOutcome::Ok { duration, .. } => {
-            out.error_count += 1;
+        HangOutcome::Ok { result, duration } => {
             ctx.metrics
                 .record_tool(tool, duration, CallOutcome::ServerError);
-            out.notes
-                .push(format!("{label}: `{tool}` returned isError"));
-            None
+            Called::Refused(error_text(&result))
         }
         HangOutcome::Slow { duration, .. } => {
             out.hang_count += 1;
             ctx.metrics.record_tool(tool, duration, CallOutcome::Hang);
             out.notes
                 .push(format!("{label}: `{tool}` exceeded the hang threshold"));
-            None
+            Called::Failed
         }
         HangOutcome::Deadlock { hung_for } => {
             out.deadlock_count += 1;
@@ -346,21 +401,21 @@ async fn call(
                 "deadlock: {label} tool={tool} hung_for={}ms",
                 hung_for.as_millis()
             ));
-            None
+            Called::Failed
         }
         HangOutcome::Err(err) => {
             out.error_count += 1;
             ctx.metrics
                 .record_tool(tool, started.elapsed(), classify_error(&err));
             out.notes.push(format!("{label}: `{tool}` failed: {err}"));
-            None
+            Called::Failed
         }
         other => {
             out.error_count += 1;
             out.notes.push(format!(
                 "{label}: unexpected hang outcome for `{tool}`: {other:?}"
             ));
-            None
+            Called::Failed
         }
     }
 }
@@ -402,6 +457,28 @@ fn has_marker(template: &Value) -> bool {
     }
 }
 
+/// The text a tool error carries, on one line and capped, for a note.
+fn error_text(result: &CallToolResult) -> String {
+    const MAX_CHARS: usize = 200;
+    let text = result
+        .content
+        .iter()
+        .filter_map(|c| match c {
+            Content::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        return "(no text)".to_owned();
+    }
+    match text.char_indices().nth(MAX_CHARS) {
+        Some((cut, _)) => format!("{}…", &text[..cut]),
+        None => text,
+    }
+}
+
 fn contains(result: &CallToolResult, mark: &str) -> bool {
     call_tool_result_to_value(result).to_string().contains(mark)
 }
@@ -414,6 +491,7 @@ fn merge(into: &mut ScenarioOutcome, from: ScenarioOutcome) {
     into.error_count += from.error_count;
     into.divergence_count += from.divergence_count;
     into.lost_update_count += from.lost_update_count;
+    into.refused_write_count += from.refused_write_count;
     into.incomplete_worker_count += from.incomplete_worker_count;
     into.teardown_failure_count += from.teardown_failure_count;
     into.notes.extend(from.notes);
@@ -450,6 +528,26 @@ mod tests {
                 "label": "w7-s2"
             })
         );
+    }
+
+    #[test]
+    fn error_text_is_one_capped_line() {
+        let result = |text: &str| CallToolResult {
+            meta: None,
+            content: vec![Content::Text {
+                text: text.to_owned(),
+            }],
+            is_error: true,
+            structured_content: None,
+        };
+        assert_eq!(
+            error_text(&result("Could not find exact match for edit:\nEND")),
+            "Could not find exact match for edit: END"
+        );
+        assert_eq!(error_text(&result("  ")), "(no text)");
+        let long = error_text(&result(&"é".repeat(300)));
+        assert_eq!(long.chars().count(), 201);
+        assert!(long.ends_with('…'));
     }
 
     #[test]

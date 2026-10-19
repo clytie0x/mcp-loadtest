@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """mock-store: an append/read store for the lost_update detector.
 
-    mock-store.py --mode racy|safe|memory|last [--store PATH]
+    mock-store.py --mode racy|safe|memory|last|refusing|closed [--store PATH]
 
 PATH defaults to $MOCK_STORE_PATH; a relative PATH resolves against the
 working directory.
@@ -14,11 +14,16 @@ working directory.
 - memory: a per-process list; other sessions never see it.
 - last:   every append replaces the whole store with its own item, so only
           the most recent write survives.
+- refusing: like safe, but refuses with an isError result every item whose
+          lost_update marker has an odd sequence number, the way a server
+          with optimistic concurrency refuses a conflicting write.
+- closed: refuses every append with an isError result.
 """
 
 import json
 import os
 import pathlib
+import re
 import sys
 import time
 
@@ -63,6 +68,16 @@ MODE = arg("--mode", "safe")
 STORE = arg("--store", os.environ.get("MOCK_STORE_PATH"))
 MEMORY = []
 WRITES = 0
+CONFLICT = "REVISION_CONFLICT: the store changed after it was read.\nRead it again and retry."
+
+
+def refuses(item):
+    if MODE == "closed":
+        return True
+    if MODE != "refusing":
+        return False
+    seq = re.search(r"s(\d{4})x$", item)
+    return seq is not None and int(seq.group(1)) % 2 == 1
 
 
 def append(item):
@@ -138,7 +153,12 @@ def main():
             params = msg.get("params", {})
             name = params.get("name")
             args = params.get("arguments", {})
-            if name == "append":
+            if name == "append" and refuses(str(args.get("item", ""))):
+                respond_ok(
+                    msg_id,
+                    {"content": [{"type": "text", "text": CONFLICT}], "isError": True},
+                )
+            elif name == "append":
                 append(str(args.get("item", "")))
                 respond_ok(msg_id, {"content": [{"type": "text", "text": "ok"}]})
             elif name == "read":
