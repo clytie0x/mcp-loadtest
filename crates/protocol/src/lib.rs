@@ -11,7 +11,7 @@ pub mod transport;
 pub use factory::SessionFactory;
 pub use hang_detector::{HangOutcome, hang_detect};
 pub use mcp::{InputRequiredResult, ToolCallRound};
-pub use session::{Session, SessionError};
+pub use session::{PipelinedCall, Session, SessionError};
 pub use transport::{Transport, TransportError};
 
 /// This crate's version (used as the advertised MCP client version).

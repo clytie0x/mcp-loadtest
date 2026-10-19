@@ -227,6 +227,11 @@ pub(crate) enum Cmd {
         /// Writes each session sends.
         #[arg(long, default_value_t = 5)]
         writes_per_worker: u32,
+        /// Use one session (one server process) and send each round of
+        /// `--concurrent` writes back to back, as a client running tool calls
+        /// in parallel does. `--writes-per-worker` is then the number of rounds.
+        #[arg(long)]
+        pipelined: bool,
         /// Extra `KEY=VALUE` environment for every server process (repeatable).
         #[arg(long = "env", value_name = "KEY=VALUE")]
         env: Vec<String>,

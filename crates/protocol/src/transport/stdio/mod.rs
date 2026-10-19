@@ -166,6 +166,10 @@ impl Transport for StdioTransport {
         self.read_response().await
     }
 
+    async fn send_request(&mut self, body: &str) -> Result<(), TransportError> {
+        self.notify(body).await
+    }
+
     async fn notify(&mut self, body: &str) -> Result<(), TransportError> {
         let stdin = self.stdin_mut()?;
         stdin.write_all(body.as_bytes()).await?;

@@ -957,6 +957,11 @@
         },
         "read_args": {
           "$ref": "#/$defs/argsObject"
+        },
+        "pipelined": {
+          "type": "boolean",
+          "default": false,
+          "description": "Send each round of `concurrent` writes back to back on one session (one server process) instead of from separate sessions (ADR 0033)."
         }
       }
     },

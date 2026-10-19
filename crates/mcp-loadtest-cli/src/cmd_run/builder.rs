@@ -112,6 +112,12 @@ pub(crate) fn build_scenario(kind: &str, params: &Value) -> Result<Box<dyn Scena
                     .ok_or_else(|| anyhow!("scenario.write_args (object) is required"))?,
                 read_tool: required_str(params, "read_tool")?,
                 read_args: params.get("read_args").cloned().unwrap_or(json!({})),
+                pipelined: match params.get("pipelined") {
+                    None => false,
+                    Some(v) => v
+                        .as_bool()
+                        .ok_or_else(|| anyhow!("scenario.pipelined must be a boolean"))?,
+                },
             };
             if let Some(message) = plan.validation_error() {
                 return Err(anyhow!("scenario: {message}"));
