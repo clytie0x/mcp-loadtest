@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server's error text for a refused write, control write, or read
   (ADR 0032, #31).
 
+### Fixed
+
+- On macOS, a launched server's child that was killed while its launcher was
+  still alive could be reported as surviving the kill, failing teardown.
+  sysinfo reads a process's status only when it first sees it, so the check
+  now re-reads it on every poll.
+
 ## [0.4.1] — Release contents
 
 This section describes the source contents intended for `v0.4.1`. Its presence

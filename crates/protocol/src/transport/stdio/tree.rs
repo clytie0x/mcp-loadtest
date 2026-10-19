@@ -92,9 +92,13 @@ pub(super) fn kill_descendants(root: ProcessIdentity) -> KilledDescendants {
 /// process that reused the PID all count as stopped.
 pub(super) async fn survivors(processes: &[ProcessIdentity], budget: Duration) -> Vec<u32> {
     let deadline = tokio::time::Instant::now() + budget;
-    let mut system = System::new();
+    let pids: Vec<Pid> = processes.iter().map(|p| Pid::from_u32(p.pid)).collect();
     loop {
-        let pids: Vec<Pid> = processes.iter().map(|p| Pid::from_u32(p.pid)).collect();
+        // A fresh `System` each poll: on macOS, sysinfo reads a process's
+        // status only when it first sees it, so a reused one keeps reporting
+        // a process killed after the first poll as running, even once it is
+        // a zombie.
+        let mut system = System::new();
         system.refresh_processes_specifics(
             ProcessesToUpdate::Some(&pids),
             true,
@@ -178,5 +182,28 @@ mod tests {
         );
         let _ = launcher.kill();
         let _ = launcher.wait();
+    }
+
+    /// The child is first polled while it runs and killed afterwards, so its
+    /// status must be re-read: it stays an unreaped zombie of the sleeping
+    /// launcher, which a cached status would report as running.
+    #[tokio::test]
+    async fn a_descendant_killed_after_the_first_poll_is_seen_to_stop() {
+        let (mut launcher, child) = spawn_launcher();
+        let identity = ProcessIdentity::of(launcher.id()).expect("launcher identity");
+        let child_identity = ProcessIdentity::of(child).expect("child running");
+        let watch =
+            tokio::spawn(async move { survivors(&[child_identity], Duration::from_secs(5)).await });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let killed = kill_descendants(identity);
+        let left = watch.await.expect("survivors task");
+        let _ = launcher.kill();
+        let _ = launcher.wait();
+        assert_eq!(killed.signalled, vec![child_identity]);
+        assert!(
+            left.is_empty(),
+            "the killed child was reported running: {left:?}"
+        );
     }
 }
