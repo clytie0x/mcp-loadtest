@@ -5,12 +5,14 @@ servers and record every run, including clean passes.
 
 ## Phase 1 status
 
-11 servers are recorded across the runs below: the 9 run in the 2026-10-17
-table, plus `mcp-knowledge-graph` 1.3.2 and `mcp-server-sqlite` 2025.4.25.
-This meets the Phase 1 exit in the roadmap (10 servers). github-mcp-server is
-still not run; it needs a read-only token. One open server bug was found
-(lost updates in mcp-knowledge-graph). It has not been reported upstream yet,
-so the Phase 2 exit is not met.
+10 servers have had the roadmap's full set (`deadlock-probe`, `race_check`
+and a short `sustained` load): the 9 in the 2026-10-17 table and
+`mcp-server-time` 2026.10.19. This meets the Phase 1 exit in the roadmap.
+`mcp-knowledge-graph` 1.3.2 and `mcp-server-sqlite` 2025.4.25 were run with
+`lost_update` only, so they do not count toward it. github-mcp-server is still
+not run; it needs a read-only token. One open server bug was found (lost
+updates in mcp-knowledge-graph). It has not been reported upstream yet, so the
+Phase 2 exit is not met.
 
 ## Run 2026-10-17
 
@@ -266,3 +268,43 @@ A clean pass for the server. Both tool defects are fixed on `main`.
 ### Gate status
 
 This confirms the 2026-10-18 result. It has not been reported upstream yet.
+
+## Run 2026-10-19: mcp-server-time
+
+### Setup
+
+- Linux container, Python 3.13.16, uv 0.11.32. mcp-loadtest `v0.4.0`
+  candidate (`14a53d2`), release build.
+- `mcp-server-time` 2026.10.19, the current PyPI release, on `mcp` 2.3.0. Run
+  as `uvx mcp-server-time@2026.10.19 --local-timezone UTC`. No run reached an
+  external service.
+- The same settings as the 2026-10-17 run: `deadlock_probe` with 20 sessions
+  (hang threshold 10 s, grace 10 s), `race_check` with 10 sessions, and
+  `sustained` for 20 s with 10 sessions. Every session is its own server
+  process.
+
+### Results
+
+| Run | Tool | Result |
+|---|---|---|
+| probe, 20 sessions | `get_current_time` (`timezone = "UTC"`) | PASS: 0 deadlocks, 0 hangs, 20/20 ok |
+| probe, 20 sessions | `convert_time` (12:00 UTC to Asia/Bangkok) | PASS: 0 deadlocks, 0 hangs, 20/20 ok |
+| race, 10 sessions | `convert_time` | PASS: 10/10 ok, no divergence |
+| sustained, 20 s, 10 sessions | both tools, equal weight | PASS: 74,562 calls, 0 errors, p50 2.5 ms, p99 5.7 ms |
+
+- **No race check on `get_current_time`.** Its answer changes every second,
+  so calls that straddle a second boundary would differ without any bug.
+  `convert_time` with a fixed time gives the same answer to every call on the
+  same UTC date; the server adds today's date to its result, so a race check
+  that straddles midnight UTC would differ too. This one ran at about 10:30
+  UTC.
+- **The quickstart stops here.** Both tools are marked read-only but take
+  required arguments, so `deadlock-probe` without `--tool` lists them and
+  asks for `--tool` and `--args`.
+- **No processes left behind.** No `mcp-server-time` process was running
+  after the runs, although every session started through `uvx`.
+
+### Gate status
+
+A clean pass, and the tenth server with the full set.
+
