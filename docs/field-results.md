@@ -294,7 +294,10 @@ This confirms the 2026-10-18 result. It has not been reported upstream yet.
 
 - **No race check on `get_current_time`.** Its answer changes every second,
   so calls that straddle a second boundary would differ without any bug.
-  `convert_time` with a fixed time gives the same answer to every call.
+  `convert_time` with a fixed time gives the same answer to every call on the
+  same UTC date; the server adds today's date to its result, so a race check
+  that straddles midnight UTC would differ too. This one ran at about 10:30
+  UTC.
 - **The quickstart stops here.** Both tools are marked read-only but take
   required arguments, so `deadlock-probe` without `--tool` lists them and
   asks for `--tool` and `--args`.
