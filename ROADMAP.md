@@ -54,7 +54,8 @@ Exit: at least one upstream issue or PR acknowledged by its maintainers.
 
 - Verify the GitHub Action end to end on a public sample repository.
 - Ship a one-command quickstart that probes a server without a config file.
-- Decide crates.io publication (ADR 0020 is still only proposed).
+- Decide crates.io publication: deferred on 2026-10-19 until an external user
+  asks for a registry dependency (ADR 0031).
 
 Exit: a new user reaches a first verdict in under five minutes, measured on
 a clean machine.

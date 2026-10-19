@@ -1,7 +1,7 @@
 # 20. Publish to crates.io (supersedes 0015)
 
 Date: 2026-07-07
-Status: Proposed, not approved or executed
+Status: Superseded by [0031](0031-defer-crates-io-publication.md); proposed, never approved or executed
 
 **Release-truth annotation (2026-07-28):** no crate has been published under
 this decision. [`docs/RELEASE.md`](../RELEASE.md) explicitly excludes
