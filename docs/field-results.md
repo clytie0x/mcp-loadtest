@@ -373,8 +373,8 @@ A clean pass, and the tenth server with the full set.
 - **obsidian-mcp handles it correctly.** Conflicting appends are refused
   with `REVISION_CONFLICT: The note changed after it was read`, and every
   acknowledged write was in the note (24, 31 and 26 of them, plus the
-  control). mcp-loadtest still reports this as `FAIL (incomplete lost-update
-  check)`; see the defects below.
+  control). v0.4.1 reported this as `FAIL (incomplete lost-update check)`;
+  see the defects below.
 - **mcp-memory-keeper passes.** It stores items in SQLite; all 41 rows
   (40 writes and the control) were in `context.db` after the last run.
 - **memento was not run.** Its first write downloads an embedding model,
@@ -384,7 +384,7 @@ A clean pass, and the tenth server with the full set.
 
 | Defect | Status |
 |---|---|
-| `lost_update` reports any write error as `incomplete` and fails the run, even when the server refused the write and every acknowledged write was read back (obsidian-mcp). The note says only `returned isError`, without the server's error text. | Open, [#31](https://github.com/clytie0x/mcp-loadtest/issues/31) |
+| `lost_update` reports any write error as `incomplete` and fails the run, even when the server refused the write and every acknowledged write was read back (obsidian-mcp). The note says only `returned isError`, without the server's error text. | Fixed in [#33](https://github.com/clytie0x/mcp-loadtest/pull/33) (ADR 0032): refused writes count toward `refused_write_count`, and obsidian-mcp now passes with the refusal text in the notes |
 
 ### Gate status
 
