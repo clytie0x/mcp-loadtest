@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — Release contents
+
+This section describes the source contents intended for `v0.4.0`. Its presence
+does not prove that the tag, checksums, platform archives, or GitHub Release
+have been published; verify those artifacts independently.
+
+`deadlock-probe` no longer defaults `--tool` to `echo`; see **Changed**.
+
 ### Changed
 
 - `deadlock-probe` no longer defaults `--tool` to `echo`, which most real
@@ -628,5 +636,6 @@ transport failures, and configured performance thresholds.
   deadlock commit, and criterion microbenchmarks
   (record/histogram/session_loopback/hang_detect).
 
-[Unreleased]: https://github.com/Teerapat-Vatpitak/mcp-loadtest/compare/v0.3.0...main
+[Unreleased]: https://github.com/Teerapat-Vatpitak/mcp-loadtest/compare/v0.4.0...main
+[0.4.0]: https://github.com/Teerapat-Vatpitak/mcp-loadtest/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Teerapat-Vatpitak/mcp-loadtest/compare/v0.2.0...v0.3.0
