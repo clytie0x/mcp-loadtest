@@ -555,3 +555,248 @@ existing report.
 Four open server bugs still need upstream reports: server-filesystem,
 mcp-taskmanager, mcp-shrimp-task-manager and mnemonic-mcp. The issue text is
 ready in #36; filing is pending.
+
+## Run 2026-10-20: field survey of servers that keep state
+
+### Setup
+
+- Linux container, Node 22.22.0, Python 3.13.16 and uv 0.11.32 (uvx ran
+  the PyPI servers on a uv-managed Python 3.14). mcp-loadtest `v0.6.0` at
+  `6a934fc`, release build.
+- Candidates came from the official MCP Registry (every page of
+  `/v0/servers?version=latest`, 15,545 npm and PyPI packages with a stdio
+  transport), filtered by keyword (memory, task, todo, notes, kanban, sqlite,
+  knowledge graph, journal) and by required environment variables, plus
+  `npm search`. They were ranked by npm weekly downloads and pypistats
+  last-week downloads on 2026-10-20 (the "Downloads" column below). Servers
+  already in this file were not re-run.
+- Every server was installed at the pinned version in the table, with
+  `npx -y pkg@version` or `uvx pkg==version`. One server,
+  `@simonblanco/kanban-mcp`, keeps its database inside its package
+  directory, so it ran from a private `npm install` under `/tmp` instead of
+  the shared npx cache.
+- Every run got a fresh scratch directory under `/tmp`: `HOME` pointed into
+  it, the server's working directory was its store directory, and the store
+  path was set through the server's own variable or flag where it has one.
+  After each server, the files were checked to be inside the scratch
+  directory.
+- Per server: `lost-update --pipelined --concurrent 5 --writes-per-worker 3`
+  3 times, then the default mode (5 processes sharing the store,
+  `--concurrent 5 --writes-per-worker 3`) once, then `deadlock-probe
+  --concurrent 5` once on the read tool with the read arguments, on a fresh
+  store. `--startup-timeout 60s` for `lost-update`. `deadlock-probe` has no
+  `--env` or `--startup-timeout`, so every server command was wrapped in
+  `env --chdir=<store> HOME=<scratch> ...`, and packages were cached by a
+  tool listing first.
+- The write and read tools were picked by hand from each tool list. For
+  every FAIL, the store was counted independently and the published
+  package's write path was read (npm tarball or uv wheel). Upstream `main`
+  was not checked.
+
+### Results
+
+37 servers were tested: 26 from npm and 11 from PyPI. "Pipelined" is the 3
+runs of 15 writes on one process; "Processes" is the one run with 5
+processes on one store. Counts are lost of acknowledged writes; refused
+writes (the server answered `isError`) are listed where there were any.
+
+| # | Server | Downloads/wk | Write → read | Pipelined (3 runs) | Processes | Probe | Verdict |
+|---|---|---|---|---|---|---|---|
+| 1 | `@wonderwhy-er/desktop-commander` 0.3.0 | 195,946 | `edit_block` (replace `END` with `{marker}\nEND` in one file) → `read_file` | FAIL: 12, 12, 12 of 15 | PASS | PASS | **Lost updates** |
+| 2 | `@hasna/todos` 0.17.4 (`todos-mcp`, `HASNA_TODOS_LOCAL=1`) | 23,059 | `create_task` → `list_tasks` (`limit: 500`) | PASS ×3 | PASS | PASS | Clean pass |
+| 3 | `@hasna/mementos` 0.17.10 (`mementos-mcp --stdio`, `HASNA_MEMENTOS_LOCAL=1`) | 13,648 | `memory_save` → `memory_list` (`limit: 500`) | PASS ×3 | PASS | PASS | Clean pass |
+| 4 | `mcp-server-motherduck` 1.1.0 (`--db-path`, `--read-write`) | 5,096 | `execute_query` (`INSERT`) → `execute_query` (`SELECT`) | PASS ×3 | 15 refused: DuckDB file lock | 4 errors: same lock | Pass; one process per file by design |
+| 5 | `anneal-memory` 0.1.1 | 5,035 | `record` → `recall` (`limit: 100`) | PASS ×3 | PASS | PASS | Clean pass |
+| 6 | `kindex` 0.49.0 (`kin-mcp`, `kindex[mcp]`) | 2,146 | `task_add` → `task_list` (`limit: 500`) | PASS ×3 | PASS | PASS | Clean pass |
+| 7 | `graph-mind-memory` 0.9.20 | 2,086 | `brain_remember` → `brain_recall` (`query: probe`, `limit: 50`) | PASS ×3 | PASS | PASS | Clean pass |
+| 8 | `inspeximus` 3.21.0 (`inspeximus[mcp]`, `inspeximus mcp`) | 1,730 | `remember` → `recall` (`k: 100`) | PASS ×3 | PASS | PASS | Clean pass |
+| 9 | `cpersona` 2.5.3 | 1,127 | `store` → `list_memories` | PASS ×3 | PASS | PASS | Clean pass |
+| 10 | `@itseasy21/mcp-knowledge-graph` 1.0.7 | 916 | `create_entities` → `read_graph` | FAIL: 12, 12, 12 of 15 | FAIL: incomplete, store file torn | PASS | **Lost updates, corrupted store** |
+| 11 | `mcp-sqlite` 1.0.9 | 772 | `create_record` → `read_records` | PASS ×3 | PASS | PASS | Clean pass |
+| 12 | `compound-memory` 0.5.9 | 686 | `memory_write` → `memory_search` (`top_k: 100`) | PASS ×3 | FAIL: 8 of 15 (repeated: 8) | PASS | **Lost index updates across processes** |
+| 13 | `@vibeflow-tools/cli` 0.21.1 (`vf mcp --project`) | 676 | `create_task` → `list_tasks` (`limit: 0`) | PASS ×3 | PASS | PASS | Clean pass |
+| 14 | `sessionmem` 1.8.0 (`run`) | 597 | `storeMemory` → `listMemories` | PASS ×3 | PASS | PASS | Clean pass |
+| 15 | `@zensation/mcp` 0.3.0 | 522 | `zenbrain_store` → `zenbrain_recall` (`limit: 100`) | PASS ×3 | PASS | PASS | Clean pass |
+| 16 | `memory-fabric` 1.4.4 (`memory-fabric[mcp]`) | 404 | `write_local_memory_tool` (append to one section) → `read_section_tool` | PASS ×3 | PASS | PASS | Clean pass |
+| 17 | `actari-mcp` 0.19.1 | 400 | `record_artifact` → `list_artifacts` | PASS ×3 | PASS, 11 refused (`database is locked`) | PASS | Clean pass |
+| 18 | `engram-chateau` 1.10.0 (`engram-mcp`) | 390 | `engram_diary_write` → `engram_diary_read` | PASS ×3 | PASS | PASS | Clean pass |
+| 19 | `memory-lean` 1.5.0 | 321 | `create_entities` → `read_graph` | PASS ×3 | PASS | PASS | Clean pass |
+| 20 | `@ai-devkit/memory` 0.20.3 | 262 | `memory_storeKnowledge` → `memory_searchKnowledge` | PASS ×3 | PASS, 6 refused (`database is locked`) | 1 error | Pass; errors on concurrent first start |
+| 21 | `@jungjaehoon/mama-server` 2.6.0 | 221 | `save` (decision) → `search` (`limit: 100`) | PASS ×3 | Inconclusive: 5 hangs on cold model load | PASS | Pass in one process |
+| 22 | `skillmem` 0.12.1 | 181 | `mem_write` → `mem_list` | PASS ×3 | PASS | PASS | Clean pass |
+| 23 | `notes-vault-mcp` 0.7.0 | 156 | `append_file` (one note) → `read_file` | FAIL: 7 of 13, 1 of 10, PASS; 2, 5 and 7 refused | FAIL: 5 of 13, 2 refused | PASS | **Lost updates, false refusals** |
+| 24 | `server-noonien` 1.1.0 | 114 | `create_entities` → `read_graph` | PASS ×3 | Incomplete with one shared node id; PASS with one per process | PASS | Clean pass when configured as documented |
+| 25 | `@mokei/mcp-sqlite` 0.14.0 (`--db`) | 82 | `sqlite_run` (`INSERT`) → `sqlite_all` | PASS ×3 | PASS, 12 refused (`database is locked`) | PASS | Clean pass |
+| 26 | `@pepk/mcp-memory-sqlite` 1.1.1 | 80 | `create_entities` → `read_graph` | PASS ×3 | PASS, 5 refused (`database is locked`) | 1 error, not reproduced in 2 reruns | Pass |
+| 27 | `@putervision/state-memory-mcp` 1.4.1 | 78 | `manage_nodes` (`create`) → `manage_nodes` (`list`) | PASS ×3 | PASS | 3 errors | Pass; errors on concurrent first start |
+| 28 | `@mnemodb/mcp` 0.1.22 | 73 | `memory_remember` → `memory_list` | PASS ×3 | PASS | PASS | Clean pass |
+| 29 | `@psraghuveer/memento` 0.9.2 (`serve`) | 66 | `write_memory` → `list_memories` | PASS ×3 | PASS, 1 refused (`database is locked`) | PASS | Clean pass |
+| 30 | `brain-os` 0.10.0 (`serve`, after `brain-os init`) | 60 | `decision_log` → `decision_review` (`limit: 100`) | FAIL: 12, 12, 12 of 15 | FAIL: 5 of 15 | PASS | **Lost updates** |
+| 31 | `memory-mcp-lite` 2.0.0 | 33 | `remember_fact` → `search_memory_light` | PASS ×3 | PASS, 11 refused (`SQLITE_BUSY`) | 4 errors | Pass; crashes on concurrent first start |
+| 32 | `@jalipata/mcp-memory` 0.1.14 | 20 | `create_entities` → `read_graph` (`limit: 100`) | PASS ×3 | PASS | PASS | Clean pass |
+| 33 | `kanbango` 5.3.0 (`kanban mcp`) | 15 | `kanban_manage` (`create`) → `kanban_read` (`list`) | PASS ×3 | PASS | PASS | Clean pass |
+| 34 | `@learningnodes/elen-mcp` 0.3.1 | 12 | `elen_commit` → `elen_suggest` (`limit: 50`) | PASS ×3 | PASS | PASS | Clean pass |
+| 35 | `@simonblanco/kanban-mcp` 1.6.0 | 9 | `kanban_create_task` → `kanban_list_tasks` | PASS ×3 | Not run: second process exits | Not run: same | Pass in one process |
+| 36 | `mcp-simple-memory` 0.4.0 | 8 | `mem_save` → `mem_list` (`limit: 100`) | PASS ×3 | Incomplete; a script kept 3 of 15 | PASS | **Lost updates across processes** |
+| 37 | `@chinjinyu/mcp-knowledge-graph-plus` 0.1.7 | 7 | `kg_node_add` → `kg_list` | PASS ×3, 12 refused each run | PASS | PASS | Pass; most parallel writes fail |
+
+`deadlock-probe` found 0 deadlocks and 0 hangs on all 37 servers. Every
+probe error above is a tool call that returned an error, listed in the notes.
+
+### Notes per server
+
+- **desktop-commander loses parallel edits to one file.**
+  `performSearchReplace` reads the file (`dist/tools/edit.js:110`), builds
+  the new content and writes it back (`:160`) with awaits in between and no
+  lock. In each pipelined run, every `edit_block` returned success and the
+  file held the control and 3 markers, one per round of 5. Across 5
+  processes no edit was lost: each process sends its edits one at a time,
+  and the window between processes is narrower. This is the same pattern as
+  server-filesystem 2.0.0 (2026-10-19), in the most downloaded server of
+  this survey.
+- **@itseasy21/mcp-knowledge-graph loses entities and can break its file.**
+  It is a fork of the reference memory server from before the 1.0.0 lock
+  fix: `createEntities` calls `loadGraph` (`fs.readFile`,
+  `dist/index.js:24`) and `saveGraph` (`fs.writeFile`, `:44`) with no lock.
+  Pipelined, the file held 4 entities after each run (control plus 3). With
+  5 processes, `fs.writeFile` truncating the file let two writers interleave:
+  the file was left with one valid line and one torn line ending in
+  `...}on":1}`, and every later call, including the final read, failed with
+  `Unexpected non-whitespace character after JSON at position 145`. The
+  store stays unreadable until it is repaired by hand.
+- **brain-os loses decisions.** `decision_log` reads every decision
+  (`dist/tools/decision-log.js:45-46`), appends one, and `putDecisions`
+  rewrites `decisions/decisions.json` (`:80`). The write goes through a
+  temporary file and a rename, so the file is never torn, but there is no
+  lock. `decisions.json` held 4, 4 and 4 decisions after the pipelined runs
+  and 11 after the 5-process run, matching the tool's counts. The package
+  documents this itself in `dist/utils/file-store.js:123`: "KNOWN LIMIT: this
+  does NOT prevent the load-modify-save race ... tracked as v0.5.1 optimistic
+  locking".
+- **notes-vault-mcp loses appends and refuses others for a wrong reason.**
+  `notes.append` (`notes.py:115`) reads the note, appends, and calls
+  `backend.put` without the `expected_version` that `write_file` passes. The
+  local backend writes in place with `Path.write_bytes`
+  (`backends/local.py:98`), so a concurrent append can read a truncated
+  note. That append is refused with `log.md would not be a valid note:
+  missing required field: title`, although the note on disk is valid. FastMCP
+  runs the synchronous tool in worker threads, so one client's parallel
+  calls race. Results varied: 7 of 13 and 1 of 10 acknowledged appends lost,
+  then a run where none was lost and 7 were refused.
+- **compound-memory keeps every note but its search loses some.** Each
+  `memory_write` creates its own Markdown file under a cross-process
+  `flock`, and all 16 files were on disk after the 5-process run. The search
+  index, `index/tokens.json`, listed only 8 markers, so `memory_search`
+  could not find the other 8; a search from a new process did not find them
+  either. The write path
+  calls `sync()` (`index.py:269`), which reuses the in-memory index loaded
+  earlier (`_ensure_live`) and does not reload it when another process has
+  written the file since; the read path does (`_ensure_fresh`, `:180`, whose
+  docstring calls cross-process concurrent writes out of scope). Pipelined
+  runs pass. The loss repeated in a second 5-process run (8 of 15).
+  `compound-memory rebuild-index` should restore the entries; that was not
+  run.
+- **mcp-simple-memory overwrites the database from each process.** It loads
+  `memory.db` into sql.js once at start-up (`dist/index.js:36-39`) and every
+  write saves the whole in-memory database back (`persist()`, `:91-92`).
+  Pipelined runs pass. With 5 processes, the control read on a second
+  process could not see the first process's write, so `lost_update`
+  reported the run as incomplete instead of as lost updates; see the tool
+  defects below. A separate script started 5 processes, initialized all of
+  them, sent 3 `mem_save` calls on each, and read from a fresh process: all
+  15 calls succeeded and 3 were kept, all from one process, in 3 of 3 runs.
+- **@chinjinyu/mcp-knowledge-graph-plus fails parallel writes instead of
+  losing them.** All repositories share one `sqlite3` connection and each
+  call issues `BEGIN TRANSACTION`
+  (`dist/infrastructure/repositories/BaseRepository.js:42`). Inside one
+  process, 12 of every 15 parallel `kg_node_add` calls returned `SQLITE_ERROR:
+  cannot start a transaction within a transaction`. Every acknowledged write
+  was read back, so the check passes, but a client that runs tool calls in
+  parallel sees most of them fail.
+- **Errors on concurrent first start.** The probe starts 5 processes on an
+  empty store at once. Three servers fail some of those calls because each
+  process creates or migrates the schema:
+  `@ai-devkit/memory` (a separate script: 4 of 5 calls returned `duplicate
+  column name: embedding`), `@putervision/state-memory-mcp` (3 of 5: `table
+  schema_meta already exists`), and `memory-mcp-lite` (2 of 5 processes
+  exited with `fatal error: LibsqlError: SQLITE_BUSY: database is locked`).
+  `@pepk/mcp-memory-sqlite` had 1 error of 5 once; two more probes passed,
+  and the error text was not recorded (see the tool defects). None is a
+  deadlock, and none loses data.
+- **SQLite servers refuse rather than lose.** Six servers answered some of
+  the 5-process writes with `database is locked` or `SQLITE_BUSY` (actari,
+  `@ai-devkit/memory`, `@pepk/mcp-memory-sqlite`, `@mokei/mcp-sqlite`,
+  memory-mcp-lite, `@psraghuveer/memento`) and kept every acknowledged one.
+  Without a busy timeout or retry, a client sees those as failures.
+- **Single-process by design.** mcp-server-motherduck uses DuckDB, which
+  locks the database file for one process: every write from the other 4
+  processes was refused with `Could not set lock on file`, and 4 of 5 probe
+  calls failed the same way. `@simonblanco/kanban-mcp` starts a web viewer
+  on fixed port 3456; a second process exits with `EADDRINUSE`, so neither
+  the 5-process run nor the probe could start. server-noonien's own error
+  message asks for a unique `NOONIEN_NODE_ID` per process; with the default
+  shared id, 4 writes were refused (`two writers used the shard "vm.jsonl"`) and the final
+  read failed. A wrapper giving each process its own id passed.
+- **mama-server, 5 processes.** The first `save` in each process loads an
+  embedding model (553 MB, cached in advance and linked into each scratch
+  `HOME`). With 5 processes loading it at once, every first write exceeded
+  the hang threshold, so the run is inconclusive. One process passed 3 of 3
+  runs, and the probe on `search` passed.
+- **Wrong read arguments caught during verification.** Two first attempts
+  failed with the same count every run and the control write lost each
+  time: `@jalipata/mcp-memory` `read_graph` returns 10 entities by default
+  and `@vibeflow-tools/cli` `list_tasks` returns 5. With `limit: 100` and
+  `limit: 0` both pass; only those runs are in the table. graph-mind-memory's
+  first probe used `brain_recall` with `recent: true`, which fails with
+  `unable to open database file` on an empty store even in one process, so
+  it is not a concurrency error; the probe in the table used the read
+  arguments of the check.
+
+### Skipped
+
+| Server | Reason |
+|---|---|
+| server-memory, server-filesystem, mcp-knowledge-graph, mcp-taskmanager, mcp-shrimp-task-manager, basic-memory, mnemonic-mcp, obsidian-mcp, mcp-memory-keeper, `@iachilles/memento`, mcp-server-sqlite | Already in this file |
+| `obsidian-mcp-server` 3.7.0 | Needs `OBSIDIAN_API_KEY` and the Obsidian REST plugin |
+| `cortex-memory-mcp` 1.2.6 | Needs `CORTEX_API_KEY` |
+| `usetrail` 1.29.1 | Every tool needs a login to its hosted API |
+| `lodekeep` 0.3.6 | Needs a lodekeep.com account |
+| `mcp-notes` 1.0.5 | Stores notes in DynamoDB |
+| `@qianshitech/hypermarrow-mcp` 0.1.1, `fleet-memory-mcp` 0.1.0 | Thin clients for a separate local daemon (ports 8741, 5100) |
+| `todoglow-mcp` 1.1.2, `noglow-mcp` 0.2.1 | Talk to a desktop app; noglow has no read tool |
+| `@wrongstack/kanban-mcp` 1.1.8 | Read-only tools over the WrongStack app's IPC |
+| `@br8n/mcp` 0.1.2, `@database-mcp/sqlite` 0.5.1 | Read-only: no write tool |
+| `@blizzy/mcp-task-manager` 0.12.1 | No tool lists all tasks (`task_info` needs the ids) |
+| `mcp-memory-bucket` 0.15.1 | Needs folders configured through its web UI on fixed port 8767 |
+| `kanban` 0.1.70 | Its `mcp` command prints "Deprecated" |
+| `memcell` 1.6.1 | Install fails: the published package depends on `workspace:*` |
+| `mcp-server-memory` 1.0.3 | `tools/list` returned no tools |
+| `@berthojoris/mcp-sqlite-server` 1.4.1 | No reply to `initialize` within 90 s |
+| `fronyboard` 0.39.2 | `open_period` and `create_task` failed with no error text for every period format tried |
+| `exomem` 0.132.2 | Needs a vault with a schema contract; setup not attempted |
+| `openmymemo` 0.2.9 | No stdio MCP command found in its CLI help |
+| `omega-memory` 1.3.0 | The registry version is not on PyPI |
+| `pmb-ai` 1.1.0, `cuba-memorys` 1.32.0 | Pull PyTorch/CUDA or multi-GB models; the first filled the container's disk |
+| `@gannonh/memento-mcp` 0.3.9, `@sylweriusz/mcp-neo4j-memory-server` 3.2.0 | Need Neo4j |
+| `memory-journal-mcp` 8.0.1, `@j0hanz/memdb` 1.4.0, `@izumisy/mcp-duckdb-memory-server` 1.1.10, `mcp-sqlite-tools` 0.1.1, `aimem-mcp` 0.3.0, `@raajvamsy/memorylayer` 1.7.1 | Declare a Node version other than 22 (>= 24, 20 only, or < 23); not attempted |
+| `codebase-memory-mcp`, `gemdex-mcp`, `@tpsdev-ai/flair-mcp`, `llmslim` | Code index, macOS-only (MLX), needs the Flair server, or a library rather than a stateful server |
+
+### Tool defects found
+
+| Defect | Status |
+|---|---|
+| `deadlock-probe` drops the text of a tool error. A call answered with `isError` counts as `ServerError`, and neither the summary, `report.md` nor `metrics.json` says what the server returned (`@ai-devkit/memory`, `@pepk/mcp-memory-sqlite`, memory-mcp-lite). JSON-RPC errors are quoted in the notes (state-memory), and `lost_update` quotes `isError` text. The pepk error could not be identified because of this. | Open |
+| `lost_update` misses cross-process loss when each process keeps its own copy of the store. With mcp-simple-memory, the control read on a second process cannot see the first process's write, so the run is `incomplete` while the server keeps 3 of 15 acknowledged writes. A final read from a new session, after the writers have exited, would see the loss. | Open |
+| `--server` is documented as "parsed shell-style" in every subcommand's help, but `split_server_command` (`crates/core/src/config/load.rs:22-37`) splits on whitespace and ignores quotes. `--server "sh -c 'exec npx ...'"` hands `sh` the argument `'exec`, which fails with `Unterminated quoted string`. The comment on the function says so; the help text does not. | Open |
+| `lost-update` has no `--hang-threshold`, and `deadlock-probe` has no `--env` or `--startup-timeout`. mama-server's 5-process run was inconclusive because of the fixed threshold; the survey wrapped every command in `env` to set the store. | Open, minor |
+| Any `isError` reply counts as a refused write (ADR 0032), so `@chinjinyu/mcp-knowledge-graph-plus` passes while 12 of 15 parallel writes fail with an internal SQLite error, and notes-vault-mcp passed one run with 7 false refusals. The notes show the refusal text, so this is visible but not gated. | Design question, not a defect under ADR 0032 |
+
+### Gate status
+
+37 servers tested. Six lose acknowledged writes: desktop-commander,
+`@itseasy21/mcp-knowledge-graph`, brain-os and notes-vault-mcp inside one
+process, compound-memory (search index) and mcp-simple-memory only across
+processes. Five of the six were found by `lost-update` itself; the
+mcp-simple-memory loss needed a script. No deadlock or hang was found. None
+of the six has been reported upstream. Four tool defects are open. The
+summary for outside readers is [survey-2026-10.md](survey-2026-10.md).
