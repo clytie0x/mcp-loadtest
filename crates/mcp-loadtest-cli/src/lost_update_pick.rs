@@ -318,6 +318,23 @@ impl ArgsBuilder<'_> {
             return Err(format!("{at} has no usable schema"));
         };
         if let Some(reference) = obj.get("$ref") {
+            // Newer drafts apply a `$ref`'s siblings too; rather than merge
+            // them, only annotations and definitions may sit beside one.
+            const ANNOTATIONS: &[&str] = &[
+                "$ref",
+                "$defs",
+                "definitions",
+                "$schema",
+                "$id",
+                "title",
+                "description",
+                "default",
+                "examples",
+                "$comment",
+            ];
+            if let Some(sibling) = obj.keys().find(|key| !ANNOTATIONS.contains(&key.as_str())) {
+                return Err(format!("{at} combines `$ref` with `{sibling}`"));
+            }
             let target = reference
                 .as_str()
                 .and_then(|reference| reference.strip_prefix('#'))
@@ -801,6 +818,12 @@ mod tests {
                 json!({"type": "object", "properties": {"v": {"anyOf": [{"type": "string"},
                     {"type": "integer"}]}}, "required": ["v"]}),
                 "`v` uses `anyOf`",
+            ),
+            (
+                json!({"type": "object", "properties": {"s": {"$ref": "#/$defs/name",
+                    "pattern": "^[0-9]+$"}}, "required": ["s"],
+                    "$defs": {"name": {"type": "string"}}}),
+                "`s` combines `$ref` with `pattern`",
             ),
             (
                 json!({"type": "object", "properties": {"a": {"type": "array", "minItems": 2,

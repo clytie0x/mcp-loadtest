@@ -69,6 +69,8 @@ only:
 - an array gets one element built from `items`. If that element cannot be
   built and `minItems` allows it, the array is left empty;
 - objects recurse, and local `$ref`s (`#/...`) are followed, up to 8 levels.
+  A `$ref` with an assertion beside it (a `pattern`, a `type` ...) is
+  refused rather than merged.
 
 It refuses, naming the property, when it cannot fill a schema with
 confidence: `anyOf`, `oneOf`, `allOf`, `not`, `if`; a string with a

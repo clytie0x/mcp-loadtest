@@ -55,6 +55,10 @@ pub const MARKER_PLACEHOLDER: &str = "{marker}";
 /// callers that check a string field can hold one.
 pub const MARKER_LEN: usize = 22;
 
+/// Workers and writes per worker that keep their indexes within the
+/// markers' four-digit fields.
+const MAX_FOUR_DIGITS: u32 = 10_000;
+
 /// Concurrent uniquely-marked writes, then one read that must contain them.
 pub struct LostUpdate {
     /// Independent sessions writing at once. Must be at least 2.
@@ -537,9 +541,13 @@ impl LostUpdate {
         nonce: &str,
     ) -> ScenarioOutcome {
         let lost = outcome.lost_update_count;
-        let unconfirmed = |outcome: &mut ScenarioOutcome, why: String| {
+        // A failed recheck call is already counted by `call_strict`; only a
+        // read that answered but cannot confirm the loss adds an error.
+        let unconfirmed = |outcome: &mut ScenarioOutcome, why: String, counted: bool| {
             outcome.lost_update_count = 0;
-            outcome.error_count += 1;
+            if !counted {
+                outcome.error_count += 1;
+            }
             outcome.notes.push(format!(
                 "lost_update inconclusive: {lost} acknowledged write{} did not show in `{}`, \
                  but a recheck could not confirm the loss: {why}. Name a read tool that \
@@ -558,7 +566,7 @@ impl LostUpdate {
                 .await
                 .is_none()
             {
-                unconfirmed(&mut outcome, format!("`{}` failed", self.write_tool));
+                unconfirmed(&mut outcome, format!("`{}` failed", self.write_tool), true);
                 return outcome;
             }
             written.push(mark);
@@ -573,7 +581,7 @@ impl LostUpdate {
         )
         .await
         else {
-            unconfirmed(&mut outcome, "the second read failed".to_owned());
+            unconfirmed(&mut outcome, "the second read failed".to_owned(), true);
             return outcome;
         };
 
@@ -595,6 +603,7 @@ impl LostUpdate {
                     if dropped == 1 { "" } else { "s" },
                     if evicted == 1 { "y" } else { "ies" }
                 ),
+                false,
             );
         } else if reappeared > 0 {
             unconfirmed(
@@ -603,6 +612,7 @@ impl LostUpdate {
                     "{reappeared} of the missing markers appeared in a second read, so the \
                      read does not yet show every acknowledged write when it answers"
                 ),
+                false,
             );
         } else {
             outcome.notes.extend(loss_notes);
@@ -638,6 +648,10 @@ impl LostUpdate {
             Some("concurrent must be >= 2")
         } else if self.writes_per_worker == 0 {
             Some("writes_per_worker must be >= 1")
+        } else if self.concurrent > MAX_FOUR_DIGITS || self.writes_per_worker > MAX_FOUR_DIGITS {
+            // Worker and sequence numbers must fit their four-digit fields,
+            // or markers outgrow MARKER_LEN.
+            Some("concurrent and writes_per_worker must be <= 10000")
         } else if !has_marker(&self.write_args) {
             Some("write_args must contain {marker} in a string value")
         } else {
@@ -995,5 +1009,15 @@ mod tests {
                 .unwrap()
                 .contains("writes_per_worker")
         );
+        // Indexes past 9999 would make markers longer than MARKER_LEN.
+        plan.writes_per_worker = 10_000;
+        plan.concurrent = 10_000;
+        assert_eq!(plan.validation_error(), None);
+        assert_eq!(marker("abcd1234", "9999", 9999).len(), MARKER_LEN);
+        plan.concurrent = 10_001;
+        assert!(plan.validation_error().unwrap().contains("<= 10000"));
+        plan.concurrent = 2;
+        plan.writes_per_worker = 10_001;
+        assert!(plan.validation_error().unwrap().contains("<= 10000"));
     }
 }
