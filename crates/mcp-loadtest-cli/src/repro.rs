@@ -239,7 +239,7 @@ fn render_node(plan: &ReproPlan) -> String {
     let sdk = ReproSdk::Node;
     let mut env = String::from("{ ...process.env");
     for (key, value) in &plan.env {
-        let _ = write!(env, ", {}: {}", str_lit(key, sdk), str_lit(value, sdk));
+        let _ = write!(env, ", {}: {}", key_lit(key, sdk), str_lit(value, sdk));
     }
     env.push_str(" }");
     let cwd = match &plan.working_dir {
@@ -262,6 +262,11 @@ import {{ StdioClientTransport }} from "@modelcontextprotocol/sdk/client/stdio.j
 const CALLS = {calls};
 const nonce = randomBytes(4).toString("hex");
 const marker = (i) => `mlt${{nonce}}w${{String(i).padStart(4, "0")}}s0000x`;
+const CONTROL = `mlt${{nonce}}c0000s0000x`;
+const inconclusive = (why) => {{
+  console.log(`INCONCLUSIVE: ${{why}}`);
+  process.exit(2);
+}};
 
 const client = new Client({{ name: "mcp-loadtest-repro", version: "1" }});
 await client.connect(new StdioClientTransport({{
@@ -270,11 +275,14 @@ await client.connect(new StdioClientTransport({{
   env: {env},
 {cwd}}}));
 
-const write = (i) => {{
-  const m = marker(i);
-  return client.callTool({{ name: {write_tool}, arguments: {write_args} }});
-}};
-const results = await Promise.allSettled(Array.from({{ length: CALLS }}, (_, i) => write(i)));
+const write = (i, m) => client.callTool({{ name: {write_tool}, arguments: {write_args} }});
+
+// A control write, alone, before the concurrent ones: data the store already
+// held must survive them too.
+const control = await write(0, CONTROL).catch((e) => ({{ isError: true, content: String(e) }}));
+if (control.isError) inconclusive("the control write failed, so the store cannot be checked");
+
+const results = await Promise.allSettled(Array.from({{ length: CALLS }}, (_, i) => write(i, marker(i))));
 const acknowledged = [];
 let refused = 0;
 let failed = 0;
@@ -283,21 +291,26 @@ results.forEach((r, i) => {{
   else if (r.value.isError) refused += 1;
   else acknowledged.push(marker(i));
 }});
+if (acknowledged.length === 0) {{
+  console.log(`calls: ${{CALLS}} sent, 0 succeeded, ${{refused}} isError, ${{failed}} failed`);
+  inconclusive("no concurrent write was acknowledged, so there is nothing to check");
+}}
 
 const readResult = await client.callTool({{ name: {read_tool}, arguments: {read_args} }});
 await client.close();
 if (readResult.isError) {{
   console.log(`calls: ${{CALLS}} sent, ${{acknowledged.length}} succeeded, ${{refused}} isError, ${{failed}} failed`);
-  console.log("INCONCLUSIVE: the read tool returned isError, so nothing can be concluded about lost writes");
   console.log(JSON.stringify(readResult.content));
-  process.exit(2);
+  inconclusive("the read tool returned isError, so nothing can be concluded about lost writes");
 }}
 const read = JSON.stringify(readResult);
 const kept = acknowledged.filter((m) => read.includes(m));
+const controlKept = read.includes(CONTROL);
 console.log(`calls: ${{CALLS}} sent, ${{acknowledged.length}} succeeded, ${{refused}} isError, ${{failed}} failed`);
-console.log(`read: ${{kept.length}} of ${{acknowledged.length}} acknowledged writes are in the result`);
-if (kept.length < acknowledged.length) {{
-  console.log(`LOST: ${{acknowledged.length - kept.length}} acknowledged writes are missing`);
+console.log(`read: ${{kept.length}} of ${{acknowledged.length}} acknowledged writes are in the result; control write ${{controlKept ? "kept" : "missing"}}`);
+const lost = acknowledged.length - kept.length + (controlKept ? 0 : 1);
+if (lost > 0) {{
+  console.log(`LOST: ${{lost}} acknowledged writes are missing${{controlKept ? "" : ", including the control write"}}`);
   process.exitCode = 1;
 }}
 "#,
@@ -336,15 +349,20 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 CALLS = {calls}
+# Seconds to wait for one tool call, as the Node SDK does by default; without
+# it a call the server never answers hangs the script.
+TIMEOUT = 60
 NONCE = secrets.token_hex(4)
+
+
+CONTROL = f"mlt{{NONCE}}c0000s0000x"
 
 
 def marker(i):
     return f"mlt{{NONCE}}w{{i:04d}}s0000x"
 
 
-def write_args(i):
-    m = marker(i)
+def write_args(i, m):
     return {write_args}
 
 
@@ -361,8 +379,23 @@ async def main():
 {cwd}    )
     async with stdio_client(server) as (r, w), ClientSession(r, w) as session:
         await session.initialize()
+        # A control write, alone, before the concurrent ones: data the store
+        # already held must survive them too.
+        try:
+            control = await asyncio.wait_for(
+                session.call_tool({write_tool}, write_args(0, CONTROL)), TIMEOUT
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"INCONCLUSIVE: the control write failed ({{e}}), so the store cannot be checked")
+            return 2
+        if is_error(control):
+            print("INCONCLUSIVE: the control write returned isError, so the store cannot be checked")
+            return 2
         results = await asyncio.gather(
-            *(session.call_tool({write_tool}, write_args(i)) for i in range(CALLS)),
+            *(
+                asyncio.wait_for(session.call_tool({write_tool}, write_args(i, marker(i))), TIMEOUT)
+                for i in range(CALLS)
+            ),
             return_exceptions=True,
         )
         acknowledged, refused, failed = [], 0, 0
@@ -373,7 +406,13 @@ async def main():
                 refused += 1
             else:
                 acknowledged.append(marker(i))
-        read_result = await session.call_tool({read_tool}, {read_args})
+        if not acknowledged:
+            print(f"calls: {{CALLS}} sent, 0 succeeded, {{refused}} isError, {{failed}} failed")
+            print("INCONCLUSIVE: no concurrent write was acknowledged, so there is nothing to check")
+            return 2
+        read_result = await asyncio.wait_for(
+            session.call_tool({read_tool}, {read_args}), TIMEOUT
+        )
     if is_error(read_result):
         print(f"calls: {{CALLS}} sent, {{len(acknowledged)}} succeeded, {{refused}} isError, {{failed}} failed")
         print("INCONCLUSIVE: the read tool returned isError, so nothing can be concluded about lost writes")
@@ -381,10 +420,16 @@ async def main():
         return 2
     read = read_result.model_dump_json()
     kept = [m for m in acknowledged if m in read]
+    control_kept = CONTROL in read
     print(f"calls: {{CALLS}} sent, {{len(acknowledged)}} succeeded, {{refused}} isError, {{failed}} failed")
-    print(f"read: {{len(kept)}} of {{len(acknowledged)}} acknowledged writes are in the result")
-    if len(kept) < len(acknowledged):
-        print(f"LOST: {{len(acknowledged) - len(kept)}} acknowledged writes are missing")
+    print(
+        f"read: {{len(kept)}} of {{len(acknowledged)}} acknowledged writes are in the result; "
+        f"control write {{'kept' if control_kept else 'missing'}}"
+    )
+    lost = len(acknowledged) - len(kept) + (0 if control_kept else 1)
+    if lost > 0:
+        suffix = "" if control_kept else ", including the control write"
+        print(f"LOST: {{lost}} acknowledged writes are missing{{suffix}}")
         return 1
     return 0
 
@@ -623,10 +668,21 @@ mod tests {
             "process.exitCode = 1;",
             "if (readResult.isError) {",
             "process.exit(2);",
+            "const control = await write(0, CONTROL)",
+            "if (acknowledged.length === 0) {",
+            "const controlKept = read.includes(CONTROL);",
         ] {
             assert!(script.contains(needle), "missing {needle}:\n{script}");
         }
         assert!(!script.contains("cwd:"));
+    }
+
+    #[test]
+    fn a_proto_env_key_stays_an_own_property_in_node() {
+        let mut plan = plan();
+        plan.env.insert("__proto__".to_owned(), "x".to_owned());
+        let script = render(&plan, ReproSdk::Node);
+        assert!(script.contains(r#"["__proto__"]: "x""#), "{script}");
     }
 
     #[test]
@@ -643,7 +699,10 @@ mod tests {
             r#"        env={**os.environ, "TASK_MANAGER_FILE_PATH": "/tmp/t.json"},"#,
             r#"        cwd="/srv/app","#,
             r#"    return {"originalRequest": m, "tasks": [{"description": m, "title": m}]}"#,
-            r#"session.call_tool("request_planning", write_args(i))"#,
+            r#"session.call_tool("request_planning", write_args(i, marker(i))), TIMEOUT)"#,
+            r#"write_args(0, CONTROL)"#,
+            "if not acknowledged:",
+            "control_kept = CONTROL in read",
             r#"session.call_tool("list_requests", {})"#,
             "asyncio.gather",
             "sys.exit(asyncio.run(main()))",
