@@ -334,7 +334,7 @@ import {{ StdioClientTransport }} from "@modelcontextprotocol/sdk/client/stdio.j
 const CALLS = {calls};
 const nonce = randomBytes(4).toString("hex");
 const marker = (i) => `mlt${{nonce}}w${{String(i).padStart(4, "0")}}s0000x`;
-const CONTROL = `mlt${{nonce}}c0000s0000x`;
+const CONTROL = `mlt${{nonce}}w000cs0000x`;
 const inconclusive = (why) => {{
   console.log(`INCONCLUSIVE: ${{why}}`);
   process.exit(2);
@@ -379,17 +379,22 @@ const results = await Promise.allSettled(Array.from({{ length: CALLS }}, (_, i) 
 const acknowledged = [];
 let refused = 0;
 let failed = 0;
+let timedOut = 0;
 results.forEach((r, i) => {{
-  if (r.status === "rejected") failed += 1;
-  else if (r.value.isError) refused += 1;
+  if (r.status === "rejected") {{
+    failed += 1;
+    // The SDK's RequestTimeout error code.
+    if (r.reason?.code === -32001) timedOut += 1;
+  }} else if (r.value.isError) refused += 1;
   else acknowledged.push(marker(i));
 }});
+console.log(`calls: ${{CALLS}} sent, ${{acknowledged.length}} succeeded, ${{refused}} isError, ${{failed}} failed`);
 if (acknowledged.length === 0) {{
-  console.log(`calls: ${{CALLS}} sent, 0 succeeded, ${{refused}} isError, ${{failed}} failed`);
   inconclusive("no concurrent write was acknowledged, so there is nothing to check");
 }}
-
-console.log(`calls: ${{CALLS}} sent, ${{acknowledged.length}} succeeded, ${{refused}} isError, ${{failed}} failed`);
+if (timedOut > 0) {{
+  inconclusive(`${{timedOut}} writes timed out and may still change the store, so the read would prove nothing`);
+}}
 const read = await readStore("final");
 await client.close().catch(() => {{}});
 const kept = acknowledged.filter((m) => read.includes(m));
@@ -442,7 +447,7 @@ TIMEOUT = 60
 NONCE = secrets.token_hex(4)
 
 
-CONTROL = f"mlt{{NONCE}}c0000s0000x"
+CONTROL = f"mlt{{NONCE}}w000cs0000x"
 
 
 def marker(i):
@@ -510,19 +515,26 @@ async def main():
             ),
             return_exceptions=True,
         )
-        acknowledged, refused, failed = [], 0, 0
+        acknowledged, refused, failed, timed_out = [], 0, 0, 0
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
                 failed += 1
+                if isinstance(result, asyncio.TimeoutError):
+                    timed_out += 1
             elif is_error(result):
                 refused += 1
             else:
                 acknowledged.append(marker(i))
+        print(f"calls: {{CALLS}} sent, {{len(acknowledged)}} succeeded, {{refused}} isError, {{failed}} failed")
         if not acknowledged:
-            print(f"calls: {{CALLS}} sent, 0 succeeded, {{refused}} isError, {{failed}} failed")
             print("INCONCLUSIVE: no concurrent write was acknowledged, so there is nothing to check")
             return 2
-        print(f"calls: {{CALLS}} sent, {{len(acknowledged)}} succeeded, {{refused}} isError, {{failed}} failed")
+        if timed_out:
+            print(
+                f"INCONCLUSIVE: {{timed_out}} writes timed out and may still change the store, "
+                "so the read would prove nothing"
+            )
+            return 2
         read = await read_store("final")
         if read is None:
             return 2
@@ -994,5 +1006,31 @@ mod tests {
         let python = render(&plan(), ReproSdk::Python);
         assert!(python.contains("the session failed"), "{python}");
         assert!(python.contains("sys.exit(asyncio.run(run()))"), "{python}");
+    }
+
+    #[test]
+    fn timed_out_writes_stop_before_the_read_and_the_control_uses_the_engine_marker() {
+        let node = render(&plan(), ReproSdk::Node);
+        assert!(node.contains("r.reason?.code === -32001"), "{node}");
+        assert!(node.contains("if (timedOut > 0) {"), "{node}");
+        assert!(node.contains("w000cs0000x"), "{node}");
+        let python = render(&plan(), ReproSdk::Python);
+        assert!(
+            python.contains("isinstance(result, asyncio.TimeoutError)"),
+            "{python}"
+        );
+        assert!(python.contains("if timed_out:"), "{python}");
+        assert!(python.contains("w000cs0000x"), "{python}");
+        for script in [&node, &python] {
+            let stop = script.find("writes timed out").expect("timeout stop");
+            let read = script
+                .find(r#"read_store("final")"#)
+                .or_else(|| script.find(r#"readStore("final")"#))
+                .expect("final read");
+            assert!(
+                stop < read,
+                "the timeout check must come before the final read"
+            );
+        }
     }
 }
