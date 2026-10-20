@@ -211,7 +211,8 @@ but one of the concurrent writes is lost.
 
 This SEP adds a short "Concurrent Tool Calls" section to `server/tools`:
 servers SHOULD assume tool calls can run concurrently, MUST NOT report success
-for a modification that a concurrent call can silently overwrite, and SHOULD
+for a modification whose effect a concurrent call then silently loses (the
+outcome must match some sequential order of the successful calls), and SHOULD
 either serialize conflicting modifications or refuse them with a tool
 execution error. Clients get one sentence: a client that needs one call to
 see another's effect waits for the first response. The SEP adds no messages,
@@ -316,9 +317,13 @@ Insert after "Stateful Tools":
 > concurrently, and that their responses can be sent in any order.
 >
 > When a tool call modifies state that another tool call can also modify,
-> the server **MUST NOT** return a successful result for a modification that
-> a concurrent call can then overwrite or discard without either call
-> returning an error. To meet this, a server **SHOULD** either:
+> the server **MUST NOT** return a successful result for a modification whose
+> effect is then lost to a concurrent call, unless the tool's documented
+> semantics say a later call replaces it. In other words, the outcome of
+> concurrent successful calls **MUST** match some order of running them one
+> at a time: two `add_item` calls that both succeed leave both items, while
+> two `set_status` calls may leave either value, because replacing the value
+> is what `set_status` does. To meet this, a server **SHOULD** either:
 >
 > - serialize conflicting modifications, for example with a lock, a
 >   transaction, or a single writer, so that each acknowledged modification
@@ -367,7 +372,10 @@ or changed.
 about what the server reports, not how it stores data. A successful result
 that is later silently undone is wrong information sent to the client, and
 the client cannot detect it. Silent loss is the one outcome the requirement
-forbids. Losing data with an error, refusing the call, or serializing are
+forbids. Loss here means an effect that no sequential order of the
+successful calls would lose; a tool whose documented job is to replace a
+value (last writer wins) does not violate it when a later call replaces
+that value. Losing data with an error, refusing the call, or serializing are
 all allowed. It does not require transactions, exactly-once execution or
 any particular storage. A server whose tools never modify shared state (most
 read-only and stateless servers) is not affected.
@@ -506,8 +514,10 @@ language, fit the TypeScript and Python SDK tool pages.
 > read-modify-write, or detect that the data changed since it was read and
 > return a tool error (`isError: true`) that tells the model to read it again
 > and retry. A lock inside one process does not protect a file that other
-> processes write: use a lock file, a database, or a write to a temporary
-> file followed by a rename.
+> processes write: use a lock file or a database transaction around the whole
+> read-modify-write, or a compare-and-swap check. Writing to a temporary file
+> and renaming it only stops readers from seeing a half-written file; on its
+> own it does not stop two processes from overwriting each other's changes.
 >
 > ```python
 > import asyncio
