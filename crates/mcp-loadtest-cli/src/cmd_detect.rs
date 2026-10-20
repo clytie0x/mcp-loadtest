@@ -12,13 +12,14 @@ use serde_json::{Value, json};
 use mcp_loadtest::config::{
     Config, OutputConfig, ScenarioConfig, ServerConfig, split_server_command,
 };
-use mcp_loadtest::report::failure_reasons;
+use mcp_loadtest::report::{Report, failure_reasons};
 use mcp_loadtest::run::Run;
 use mcp_loadtest::scenario::Scenario;
 use mcp_loadtest::scenario::lost_update::LostUpdate;
 use mcp_loadtest::scenario::race_check::RaceCheck;
 
 use crate::emit::emit_reports;
+use crate::repro::{ReproPlan, ReproRequest};
 
 /// The stdio server a detector subcommand spawns for every session.
 #[derive(Debug, Clone)]
@@ -51,12 +52,16 @@ pub async fn run_race_check(
         tool: tool.to_owned(),
         args: parse_json_object("--args", args, target.redact_server_identity)?,
     };
-    execute(target, "race_check", Box::new(scenario), output_dir).await
+    let report = execute(target, "race_check", Box::new(scenario), output_dir).await?;
+    gate("race_check", &report)
 }
 
 /// Run `lost_update`: `concurrent` sessions each send `writes_per_worker`
 /// uniquely-marked writes, and one read must return every acknowledged one.
 /// With `pipelined`, one session sends each round's writes back to back.
+///
+/// With `repro` (pipelined only), a run that finds lost updates also writes
+/// a script that reproduces them on the official MCP SDK (ADR 0034).
 #[allow(clippy::too_many_arguments)] // mirrors the CLI flags
 pub async fn run_lost_update(
     target: &DetectTarget,
@@ -67,6 +72,7 @@ pub async fn run_lost_update(
     concurrent: u32,
     writes_per_worker: u32,
     pipelined: bool,
+    repro: Option<&ReproRequest>,
     output_dir: &Path,
 ) -> Result<()> {
     let scenario = LostUpdate {
@@ -81,7 +87,46 @@ pub async fn run_lost_update(
     if let Some(message) = scenario.validation_error() {
         anyhow::bail!("invalid lost-update plan: {message}");
     }
-    execute(target, "lost_update", Box::new(scenario), output_dir).await
+    let repro = match repro {
+        Some(_) if !pipelined => anyhow::bail!(
+            "--emit-repro needs --pipelined: the script reproduces writes lost inside one \
+             server process"
+        ),
+        // The script embeds the server command and env verbatim, which Action
+        // mode keeps out of every output.
+        Some(_) if target.redact_server_identity => {
+            anyhow::bail!("--emit-repro is not available in Action mode")
+        }
+        Some(request) => {
+            let (command, args) = split_server_command(&target.server)
+                .with_context(|| format!("parsing --server `{}`", target.server))?;
+            let plan = ReproPlan {
+                command,
+                args,
+                env: parse_env(&target.env, false)?,
+                working_dir: None,
+                write_tool: scenario.write_tool.clone(),
+                write_args: scenario.write_args.clone(),
+                read_tool: scenario.read_tool.clone(),
+                read_args: scenario.read_args.clone(),
+                concurrent,
+            };
+            Some((request, plan))
+        }
+        None => None,
+    };
+    let report = execute(target, "lost_update", Box::new(scenario), output_dir).await?;
+    if let Some((request, plan)) = repro {
+        if report.scenario_outcome.lost_update_count > 0 {
+            request.write(&plan)?;
+        } else {
+            eprintln!(
+                "No lost update found, so no repro script was written to {}",
+                request.path.display()
+            );
+        }
+    }
+    gate("lost_update", &report)
 }
 
 fn parse_json_object(flag: &str, raw: &str, redact: bool) -> Result<Value> {
@@ -109,14 +154,13 @@ fn parse_env(pairs: &[String], redact: bool) -> Result<BTreeMap<String, String>>
         .collect()
 }
 
-/// Drive `scenario`, write the terminal, markdown, and JSON reports, and fail
-/// with the report's reasons when it did not pass.
+/// Drive `scenario` and write the terminal, markdown, and JSON reports.
 async fn execute(
     target: &DetectTarget,
     kind: &str,
     scenario: Box<dyn Scenario>,
     output_dir: &Path,
-) -> Result<()> {
+) -> Result<Report> {
     let server_parts = split_server_command(&target.server);
     let (command, cmd_args) = if target.redact_server_identity {
         server_parts
@@ -137,11 +181,16 @@ async fn execute(
     }
     let report = run.execute().await?;
     emit_reports(&report, &formats, output_dir)?;
+    Ok(report)
+}
+
+/// Fail with the report's reasons when it did not pass.
+fn gate(kind: &str, report: &Report) -> Result<()> {
     if !report.passed() {
         anyhow::bail!(
             "{} failed — {}; {}/{} successful calls; see report",
             kind.replace('_', "-"),
-            failure_reasons(&report).join(", "),
+            failure_reasons(report).join(", "),
             report.scenario_outcome.successful_calls,
             report.scenario_outcome.total_calls,
         );

@@ -75,6 +75,7 @@ async fn lost_update_fails_a_racy_store_and_passes_a_safe_one_via_env() {
         4,
         3,
         false,
+        None,
         &dir.path().join("runs"),
     )
     .await
@@ -102,6 +103,7 @@ async fn lost_update_fails_a_racy_store_and_passes_a_safe_one_via_env() {
         4,
         3,
         false,
+        None,
         &dir.path().join("runs"),
     )
     .await
@@ -126,6 +128,7 @@ async fn pipelined_lost_update_fails_a_store_that_races_in_one_process() {
         5,
         2,
         true,
+        None,
         &dir.path().join("runs"),
     )
     .await
@@ -145,6 +148,7 @@ async fn lost_update_rejects_a_plan_without_a_marker() {
         4,
         3,
         false,
+        None,
         dir.path(),
     )
     .await

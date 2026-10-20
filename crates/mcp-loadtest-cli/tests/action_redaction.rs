@@ -264,3 +264,36 @@ fn action_mode_redacts_lost_update_stderr_and_reports() {
     }
     assert!(report_files > 0, "the passing run wrote no reports");
 }
+
+/// The repro script embeds the server command, so Action mode refuses it.
+#[test]
+fn action_mode_refuses_emit_repro() {
+    let temp = tempdir().expect("tempdir");
+    let output_dir = path_text(&temp.path().join("runs"));
+    let script = temp.path().join("repro.py");
+    let server = format!("no-such-action-binary --token {SENTINEL}");
+    let refused = run_cli(&[
+        "lost-update",
+        "--server",
+        &server,
+        "--write-tool",
+        "append",
+        "--write-args",
+        r#"{"item":"{marker}"}"#,
+        "--read-tool",
+        "read",
+        "--pipelined",
+        "--emit-repro",
+        &path_text(&script),
+        "--output-dir",
+        &output_dir,
+        "--action-redact-server-identity",
+    ]);
+    assert_redacted(&refused, &server);
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("not available in Action mode"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(!script.exists(), "Action mode wrote a repro script");
+}

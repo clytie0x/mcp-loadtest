@@ -3,7 +3,8 @@
 //!
 //! Split into focused submodules (kept private; the public surface is the
 //! [`run_from_config`] entry, its private-Action output override
-//! [`run_from_config_with_output`], plus the re-exported [`parse_dur_str`]
+//! [`run_from_config_with_output`], the `--emit-repro` form
+//! [`run_from_config_with_repro`], plus the re-exported [`parse_dur_str`]
 //! helper `main.rs` shares with the `deadlock-probe` subcommand):
 //! - `builder` — scenario `kind` → `Box<dyn Scenario>` dispatch
 //! - `params` — generic TOML param plucking + duration parsing
@@ -19,6 +20,7 @@ use mcp_loadtest::report::failure_reasons;
 use mcp_loadtest::run::Run;
 
 use crate::emit::emit_reports;
+use crate::repro::{ReproPlan, ReproRequest};
 
 mod builder;
 mod params;
@@ -60,6 +62,31 @@ pub async fn run_from_config_with_output(
     action_output_dir: Option<PathBuf>,
     redact_server_identity: bool,
 ) -> Result<()> {
+    run_from_config_with_repro(
+        path,
+        capture_stderr,
+        tee_stderr,
+        trace,
+        action_output_dir,
+        redact_server_identity,
+        None,
+    )
+    .await
+}
+
+/// [`run_from_config_with_output`], plus `--emit-repro`: when the config is
+/// a pipelined `lost_update` against a stdio server and the run finds lost
+/// updates, write a script that reproduces them on the official MCP SDK
+/// (ADR 0034). Any other config is refused before the run starts.
+pub async fn run_from_config_with_repro(
+    path: &Path,
+    capture_stderr: bool,
+    tee_stderr: bool,
+    trace: Option<PathBuf>,
+    action_output_dir: Option<PathBuf>,
+    redact_server_identity: bool,
+    repro: Option<&ReproRequest>,
+) -> Result<()> {
     let config_result = Config::from_file(path);
     let mut config = if redact_server_identity {
         config_result.map_err(|_| {
@@ -72,6 +99,7 @@ pub async fn run_from_config_with_output(
         config.output.report_dir = output_dir;
     }
     let scenario = build_scenario(&config.scenario.kind, &config.scenario.params)?;
+    let repro_plan = repro.map(|_| ReproPlan::from_config(&config)).transpose()?;
     let output_dir = config.output.report_dir.clone();
     let formats = config.output.formats.clone();
 
@@ -93,6 +121,16 @@ pub async fn run_from_config_with_output(
     let report = run.execute().await?;
 
     emit_reports(&report, &formats, &output_dir)?;
+    if let (Some(request), Some(plan)) = (repro, &repro_plan) {
+        if report.scenario_outcome.lost_update_count > 0 {
+            request.write(plan)?;
+        } else {
+            eprintln!(
+                "No lost update found, so no repro script was written to {}",
+                request.path.display()
+            );
+        }
+    }
     if !report.passed() {
         anyhow::bail!(
             "run failed correctness gate — {}; {}/{} successful calls; see report",

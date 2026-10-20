@@ -16,3 +16,4 @@ pub mod cmd_run;
 pub mod emit;
 pub mod explain;
 pub mod hints;
+pub mod repro;

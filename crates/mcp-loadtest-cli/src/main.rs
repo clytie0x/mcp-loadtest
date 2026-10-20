@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+use mcp_loadtest_cli::repro::ReproSdk;
 use mcp_loadtest_cli::{cmd_compare, explain, hints};
 
 // Binary-local modules (not part of the `mcp_loadtest_cli` lib surface):
@@ -83,6 +84,14 @@ pub(crate) enum Cmd {
         /// Suppress server identity from Action-generated output.
         #[arg(long, hide = true)]
         action_redact_server_identity: bool,
+        /// For a pipelined `lost_update` config: if the run finds lost
+        /// updates, write a standalone script that reproduces them with the
+        /// official MCP SDK. `.mjs` writes Node, `.py` Python.
+        #[arg(long, value_name = "PATH")]
+        emit_repro: Option<PathBuf>,
+        /// SDK for --emit-repro (`node` | `python`), overriding the extension.
+        #[arg(long, value_name = "SDK", requires = "emit_repro")]
+        repro_sdk: Option<ReproSdk>,
     },
 
     /// Diagnose common setup problems; print a ✅/❌ checklist with a
@@ -232,6 +241,15 @@ pub(crate) enum Cmd {
         /// in parallel does. `--writes-per-worker` is then the number of rounds.
         #[arg(long)]
         pipelined: bool,
+        /// If the run finds lost updates, write a standalone script that
+        /// reproduces them with the official MCP SDK: one round of
+        /// `--concurrent` writes on one session, then the read. `.mjs` writes
+        /// Node, `.py` Python. Requires --pipelined.
+        #[arg(long, value_name = "PATH", requires = "pipelined")]
+        emit_repro: Option<PathBuf>,
+        /// SDK for --emit-repro (`node` | `python`), overriding the extension.
+        #[arg(long, value_name = "SDK", requires = "emit_repro")]
+        repro_sdk: Option<ReproSdk>,
         /// Extra `KEY=VALUE` environment for every server process (repeatable).
         #[arg(long = "env", value_name = "KEY=VALUE")]
         env: Vec<String>,
