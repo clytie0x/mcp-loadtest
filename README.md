@@ -86,9 +86,9 @@ calls.
 The first four were rechecked on 2026-10-19 with an official MCP SDK and
 are still on upstream `main`; the
 [upstream check](docs/field-results.md#upstream-check-2026-10-19) has the
-details. mcp-taskmanager has a
-[regression test](crates/engine/tests/taskmanager_regression.rs) pinned to
-1.1.1.
+details. Regression tests pin
+[mcp-taskmanager 1.1.1](crates/engine/tests/taskmanager_regression.rs) and
+[server-filesystem 2.0.0](crates/engine/tests/filesystem_regression.rs).
 
 ## Install
 
@@ -345,6 +345,8 @@ official client conformance matrix is documented in
 
 - [Cookbook examples](docs/examples/) — CI integration, custom scenarios,
   deadlock debugging, and finding lost updates
+- [Concurrency gate](docs/examples/ci-gate.md) — add `deadlock-probe` and
+  `lost_update` to a server's pull-request workflow
 - [DESIGN.md](DESIGN.md) — architecture, behavior, and product positioning
 - [Architecture decisions](docs/adr/) — security and implementation rationale
 - [Metrics schema](docs/schema/metrics.v1.json) — versioned JSON report contract

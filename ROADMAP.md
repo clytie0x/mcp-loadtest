@@ -59,9 +59,9 @@ Status: not met. Six server bugs are recorded in
 since been fixed upstream, and the owner chose not to report
 mcp-knowledge-graph. The other four are verified and drafted in
 [#36](https://github.com/clytie0x/mcp-loadtest/issues/36) but not filed yet.
-The lost-update class has a pinned regression test
-(`crates/engine/tests/taskmanager_regression.rs`), and the README links the
-findings.
+The lost-update class has pinned regression tests against real servers
+(`crates/engine/tests/taskmanager_regression.rs` and
+`filesystem_regression.rs`), and the README links the findings.
 
 ## Phase 3: Lower adoption friction
 
@@ -94,7 +94,8 @@ will keep the gate in their CI.
   after the fix lands.
 - Write `docs/examples/ci-gate.md`: one page that adds `lost-update` and
   `deadlock-probe` to a server's workflow, with the write and read tools
-  for a typical file-backed server and the expected PASS output.
+  for a typical file-backed server and the expected PASS output. Done
+  2026-10-20; the Action runs `lost_update` through `command: run`.
 - Change a detector only when a maintainer reports a false positive, a
   missed bug, or a message they could not act on. Each such report is an
   issue here, with a regression test before the fix.

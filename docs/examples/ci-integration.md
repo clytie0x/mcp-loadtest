@@ -92,6 +92,9 @@ Report attribution uses the set of run directories created by that invocation,
 not modification time, so an older or concurrently written report cannot be
 selected as the comparison input.
 
+To gate on deadlocks and lost updates rather than latency, see
+[ci-gate.md](ci-gate.md).
+
 The rest of this page is the manual recipe — same behavior, more knobs — for
 when you need fine-grained control over install, caching, or thresholds.
 
