@@ -465,16 +465,23 @@ by:
 ### Testing Plan
 
 The MUST NOT changes observable behaviour, so the SEP needs a conformance
-scenario and a traceability mapping before it can reach `Final`. A
-conformance scenario can only be generic if the harness knows which tools
-write and how to read the result back, so the plan is a test-server fixture
-with an append-style write tool and a read tool. The scenario sends N
-`tools/call` writes, each with a unique marker, without waiting for
-responses, then reads once, and checks that every write that returned a
-successful result is visible; writes that returned `isError` are allowed.
-It maps to the new MUST NOT. The author offers to contribute the fixture and
-scenario, based on mcp-loadtest's `lost_update` check, which already does
-this against real servers.
+scenario and a traceability mapping before it can reach `Final`. The
+requirement constrains servers, so the scenario has to run in server mode,
+against the implementation under test. The harness cannot know which of an
+arbitrary server's tools write or how to read the result back, so the plan
+is an opt-in tool contract: a server that wants this coverage exposes two
+tools in its conformance build, for example `conformance_append` (takes a
+string `item` and stores it in shared state) and `conformance_read` (returns
+every stored item). The scenario sends N `conformance_append` calls, each
+with a unique marker, without waiting for responses, then calls
+`conformance_read` once, and checks that every write that returned a
+successful result is visible; writes that returned `isError` are allowed. It
+maps to the new MUST NOT. Servers that do not implement the contract skip
+the scenario. If maintainers prefer not to add a tool contract, the
+fallback is to record the requirement as a framework-gap exclusion with a
+tracking issue, as the SEP conformance rules allow. Either way, the author
+offers to contribute the scenario, based on mcp-loadtest's `lost_update`
+check, which already does this against real servers.
 
 ## Open Questions
 
