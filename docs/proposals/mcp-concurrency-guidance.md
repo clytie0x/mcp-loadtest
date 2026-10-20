@@ -152,8 +152,10 @@ From the [SEP guidelines](https://modelcontextprotocol.io/community/sep-guidelin
    normative sentences (SHOULD assume concurrency, MUST NOT silently lose an
    acknowledged write) change what a conforming server must do, so they need
    a SEP, not a docs PR. Type: Standards Track. It adds no message, field or
-   capability, and its requirements are implementation hardening, so it
-   should be exempt from the conformance-test requirement. If maintainers
+   capability, but the MUST NOT changes observable behaviour (conflicting
+   successful calls must keep their effects), so it is not exempt from the
+   conformance-test requirement: the SEP plans a conformance scenario and its
+   traceability mapping (see the Testing Plan). If maintainers
    object to new MUST-level text, it can become an Informational SEP with the
    same content at SHOULD level.
 
@@ -462,12 +464,17 @@ by:
 
 ### Testing Plan
 
-A conformance scenario can only be generic if the harness knows which tools
-write and how to read the result back. A generic one would need a
-test-server fixture with a write tool and a read tool. The SEP's requirements
-are implementation hardening and are expected to be exempt from the
-conformance requirement. A fixture can be contributed if the sponsor wants
-one.
+The MUST NOT changes observable behaviour, so the SEP needs a conformance
+scenario and a traceability mapping before it can reach `Final`. A
+conformance scenario can only be generic if the harness knows which tools
+write and how to read the result back, so the plan is a test-server fixture
+with an append-style write tool and a read tool. The scenario sends N
+`tools/call` writes, each with a unique marker, without waiting for
+responses, then reads once, and checks that every write that returned a
+successful result is visible; writes that returned `isError` are allowed.
+It maps to the new MUST NOT. The author offers to contribute the fixture and
+scenario, based on mcp-loadtest's `lost_update` check, which already does
+this against real servers.
 
 ## Open Questions
 
