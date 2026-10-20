@@ -87,6 +87,25 @@ jobs:
 `--tool` and `--args` in `args` to choose one. Each step fails the job on a
 finding.
 
+Releases after v0.6.0 also accept `command: lost-update`, which takes the
+same flags as the `mcp-loadtest lost-update` subcommand and needs no config
+file:
+
+```yaml
+            - name: Lost updates
+              uses: clytie0x/mcp-loadtest@<release after v0.6.0>
+              with:
+                  version: <same release>
+                  command: lost-update
+                  server: "npx -y @modelcontextprotocol/server-memory@2.0.0"
+                  args: >-
+                      ["--pipelined","--concurrent","5","--writes-per-worker","3",
+                      "--env","MEMORY_FILE_PATH=/tmp/mcp-loadtest-probe.jsonl",
+                      "--write-tool","create_entities",
+                      "--write-args","{\"entities\":[{\"name\":\"{marker}\",\"entityType\":\"probe\",\"observations\":[]}]}",
+                      "--read-tool","read_graph"]
+```
+
 ## What the results look like
 
 A server that keeps every write passes:

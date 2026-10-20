@@ -241,6 +241,9 @@ pub(crate) enum Cmd {
         /// Where to write the per-run dir.
         #[arg(long, default_value = "./runs")]
         output_dir: PathBuf,
+        /// Suppress server identity from Action-generated output.
+        #[arg(long, hide = true)]
+        action_redact_server_identity: bool,
     },
 
     /// Expose mcp-loadtest itself AS an MCP server over stdio.

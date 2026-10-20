@@ -104,6 +104,11 @@ assert_eq "single" "$MCP_LOADTEST_REPORT_MODE" "run report mode"
 run_root="$MCP_LOADTEST_REPORT_ROOT"
 [ "$run_root" != "$deadlock_root" ] || fail "run reused a prior report root"
 
+mcp_loadtest_prepare_report_target lost-update "$runner_temp" --write-tool append
+assert_eq "single" "$MCP_LOADTEST_REPORT_MODE" "lost-update report mode"
+lost_update_root="$MCP_LOADTEST_REPORT_ROOT"
+[ "$lost_update_root" != "$run_root" ] || fail "lost-update reused a prior report root"
+
 mcp_loadtest_prepare_report_target doctor "$runner_temp" --runs-dir ./somewhere
 assert_eq "none" "$MCP_LOADTEST_REPORT_MODE" "doctor report mode"
 assert_eq "" "$MCP_LOADTEST_REPORT_ROOT" "doctor report root"
@@ -112,6 +117,11 @@ if mcp_loadtest_prepare_report_target \
   deadlock-probe "$runner_temp" --output-dir "${tmp_dir}/caller" 2>/dev/null
 then
   fail "caller-controlled deadlock --output-dir was accepted"
+fi
+if mcp_loadtest_prepare_report_target \
+  lost-update "$runner_temp" --output-dir="${tmp_dir}/caller" 2>/dev/null
+then
+  fail "caller-controlled lost-update --output-dir was accepted"
 fi
 if mcp_loadtest_prepare_report_target \
   run "$runner_temp" --config bench.toml --action-output-dir "${tmp_dir}/caller" 2>/dev/null
