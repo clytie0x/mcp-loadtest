@@ -328,7 +328,9 @@ Insert after "Stateful Tools":
 > is what `set_status` does. To meet this, a server **SHOULD** either:
 >
 > - serialize conflicting modifications, for example with a lock, a
->   transaction, or a single writer, so that each acknowledged modification
+>   serializable transaction (or a locking read such as `SELECT ... FOR
+>   UPDATE`, or an atomic update), or a single writer, so that each
+>   acknowledged modification
 >   is applied; or
 > - detect the conflict and return a
 >   [tool execution error](#error-handling) (`isError: true`) whose message
@@ -434,8 +436,8 @@ No wire-format change. Existing clients and servers interoperate unchanged.
 
 Servers that lose acknowledged writes under concurrent calls are not
 conformant under this SEP. They are already incorrect from a user's point of
-view, and the fix is local to the server (a lock, a transaction, or a
-conflict error). A server that switches to conflict errors will return
+view, and the fix is local to the server (a lock, a serializable transaction or
+atomic update, or a conflict error). A server that switches to conflict errors will return
 `isError: true` results it did not return before. Models already handle tool
 execution errors, and clients need no change.
 
@@ -547,12 +549,14 @@ language, fit the TypeScript and Python SDK tool pages.
 > report success.
 >
 > If a tool modifies data that another call can also modify, protect it.
-> Either hold a lock (or use a database transaction) around the whole
-> read-modify-write, or detect that the data changed since it was read and
+> Either hold a lock around the whole read-modify-write (in a database, use a
+> serializable transaction, a locking read such as `SELECT ... FOR UPDATE`,
+> or a single atomic update; a transaction at the default `READ COMMITTED`
+> level does not prevent this), or detect that the data changed since it was read and
 > return a tool error (`isError: true`) that tells the model to read it again
 > and retry. A lock inside one process does not protect a file that other
-> processes write: use a lock file or a database transaction around the whole
-> read-modify-write, or a compare-and-swap check. Writing to a temporary file
+> processes write: use a lock file, one of the database options above, or a
+> compare-and-swap check. Writing to a temporary file
 > and renaming it only stops readers from seeing a half-written file; on its
 > own it does not stop two processes from overwriting each other's changes.
 >
