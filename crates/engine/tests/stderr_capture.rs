@@ -280,7 +280,7 @@ async fn process_exited(pid: u32) -> bool {
     }
 }
 
-/// One fresh process-table observation with no grace period. This distinguishes
+/// One fresh observation with no grace period. This distinguishes
 /// "shutdown proved reap before returning" from "shutdown requested a kill
 /// and the process happened to disappear shortly afterwards."
 fn process_absent_now(pid: u32) -> bool {
@@ -291,7 +291,31 @@ fn process_absent_now(pid: u32) -> bool {
         true,
         ProcessRefreshKind::new(),
     );
-    system.process(pid).is_none()
+    if system.process(pid).is_none() {
+        return true;
+    }
+    // Windows can still list a process for a moment after it has exited, so
+    // ask the OS for its exit state, without waiting. A query that fails
+    // proves nothing unless the PID has also left the list by then.
+    #[cfg(windows)]
+    {
+        match process_alive::state(process_alive::Pid::from(pid.as_u32())) {
+            process_alive::State::Dead => true,
+            process_alive::State::Alive => false,
+            process_alive::State::Unknown => {
+                system.refresh_processes_specifics(
+                    ProcessesToUpdate::Some(&[pid]),
+                    true,
+                    ProcessRefreshKind::new(),
+                );
+                system.process(pid).is_none()
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 #[tokio::test]
