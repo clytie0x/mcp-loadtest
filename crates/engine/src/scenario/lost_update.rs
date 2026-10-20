@@ -26,6 +26,12 @@
 //! Because step 1 already proved that state is shared, a final read that
 //! shows none of the acknowledged markers (for example, a store corrupted by
 //! interleaved writes) counts every one of them as lost.
+//!
+//! With `recheck_losses` (set when the CLI picked the read tool, ADR 0035),
+//! a loss is confirmed before it counts: a few more writes, one at a time,
+//! and a second read must show them and everything the first read showed.
+//! A read that caps, pages or sorts its output fails that and leaves the
+//! check inconclusive instead of reporting writes it merely did not list.
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -45,6 +51,14 @@ use mcp_loadtest_protocol::mcp::{CallToolResult, Content};
 /// Placeholder replaced by a run-unique, fixed-width marker per write.
 pub const MARKER_PLACEHOLDER: &str = "{marker}";
 
+/// Length of every marker substituted for [`MARKER_PLACEHOLDER`], for
+/// callers that check a string field can hold one.
+pub const MARKER_LEN: usize = 22;
+
+/// Workers and writes per worker that keep their indexes within the
+/// markers' four-digit fields.
+const MAX_FOUR_DIGITS: u32 = 10_000;
+
 /// Concurrent uniquely-marked writes, then one read that must contain them.
 pub struct LostUpdate {
     /// Independent sessions writing at once. Must be at least 2.
@@ -62,7 +76,15 @@ pub struct LostUpdate {
     /// Send each round's writes pipelined on the run session instead of
     /// from `concurrent` separate sessions (ADR 0033).
     pub pipelined: bool,
+    /// Confirm missing markers with sequential writes and a second read
+    /// before counting them as lost (ADR 0035). For a read tool nobody
+    /// vouched for: one that does not list everything is then reported as
+    /// inconclusive instead of as lost updates.
+    pub recheck_losses: bool,
 }
+
+/// Sequential writes a recheck makes before its second read.
+const RECHECK_WRITES: u32 = 3;
 
 #[async_trait]
 impl Scenario for LostUpdate {
@@ -154,13 +176,13 @@ impl Scenario for LostUpdate {
         let write_tool = Arc::new(self.write_tool.clone());
         let write_args = Arc::new(self.write_args.clone());
         let writes = self.writes_per_worker;
-        let nonce = Arc::new(nonce);
+        let shared_nonce = Arc::new(nonce.clone());
         let pooled = pool::drive_pooled(ctx, self.concurrent, move |worker, mut session, wctx| {
             let acknowledged = Arc::clone(&shared);
             let first_refusal = Arc::clone(&shared_refusal);
             let write_tool = Arc::clone(&write_tool);
             let write_args = Arc::clone(&write_args);
-            let nonce = Arc::clone(&nonce);
+            let nonce = Arc::clone(&shared_nonce);
             async move {
                 let mut out = ScenarioOutcome::default();
                 for seq in 0..writes {
@@ -214,7 +236,7 @@ impl Scenario for LostUpdate {
                 return outcome;
             }
         };
-        self.verify(session, ctx, outcome, &acknowledged, &control)
+        self.verify(session, ctx, outcome, &acknowledged, &control, &nonce)
             .await
     }
 
@@ -413,7 +435,7 @@ impl LostUpdate {
         self.note_refusals(&mut outcome, first_refusal);
 
         // 3. One read; every acknowledged marker must be in it.
-        self.verify(session, ctx, outcome, &acknowledged, &control)
+        self.verify(session, ctx, outcome, &acknowledged, &control, &nonce)
             .await
     }
 
@@ -426,6 +448,7 @@ impl LostUpdate {
         mut outcome: ScenarioOutcome,
         acknowledged: &[String],
         control: &str,
+        nonce: &str,
     ) -> ScenarioOutcome {
         if acknowledged.is_empty() {
             outcome.error_count += 1;
@@ -455,8 +478,9 @@ impl LostUpdate {
         // already held (for example, a writer that read a truncated file).
         let control_lost = !contains(&read, control);
         outcome.lost_update_count = missing.len() as u64 + u64::from(control_lost);
+        let mut loss_notes = Vec::new();
         if control_lost {
-            outcome.notes.push(format!(
+            loss_notes.push(format!(
                 "lost update: the control write `{control}`, read back before the concurrent \
                  writes began, is missing from `{}`; the store dropped data it already held",
                 self.read_tool
@@ -464,7 +488,7 @@ impl LostUpdate {
         }
         if !missing.is_empty() {
             let preview: Vec<&str> = missing.iter().take(5).map(|m| m.as_str()).collect();
-            outcome.notes.push(format!(
+            loss_notes.push(format!(
                 "lost updates: {} of {} acknowledged writes to `{}` are missing from `{}` \
                  (first: {})",
                 missing.len(),
@@ -472,6 +496,131 @@ impl LostUpdate {
                 self.write_tool,
                 self.read_tool,
                 preview.join(", ")
+            ));
+        }
+        if self.recheck_losses && outcome.lost_update_count > 0 {
+            let shown: Vec<&str> = acknowledged
+                .iter()
+                .map(String::as_str)
+                .chain(std::iter::once(control))
+                .filter(|mark| contains(&read, mark))
+                .collect();
+            let mut missing: Vec<&str> = missing.iter().map(|m| m.as_str()).collect();
+            if control_lost {
+                missing.push(control);
+            }
+            return self
+                .recheck(
+                    session, ctx, outcome, loss_notes, &read, &shown, &missing, nonce,
+                )
+                .await;
+        }
+        outcome.notes.extend(loss_notes);
+        outcome
+    }
+
+    /// Confirm a loss before it counts (ADR 0035): write [`RECHECK_WRITES`]
+    /// markers one at a time, then read again. The second read must show
+    /// every one of them, every marker the first read showed (`shown`),
+    /// every other entry of the first read (`first`), and still none of the
+    /// `missing` ones. Otherwise the read is not a
+    /// complete listing (it caps, pages or sorts its output) or not a
+    /// stable one, and the check is inconclusive rather than failed.
+    /// `loss_notes` describe the loss and are kept only when it is
+    /// confirmed.
+    #[allow(clippy::too_many_arguments)] // the loss as `verify` found it
+    async fn recheck(
+        &self,
+        session: &mut Session,
+        ctx: &RunContext,
+        mut outcome: ScenarioOutcome,
+        loss_notes: Vec<String>,
+        first: &CallToolResult,
+        shown: &[&str],
+        missing: &[&str],
+        nonce: &str,
+    ) -> ScenarioOutcome {
+        let lost = outcome.lost_update_count;
+        // A failed recheck call is already counted by `call_strict`; only a
+        // read that answered but cannot confirm the loss adds an error.
+        let unconfirmed = |outcome: &mut ScenarioOutcome, why: String, counted: bool| {
+            outcome.lost_update_count = 0;
+            if !counted {
+                outcome.error_count += 1;
+            }
+            outcome.notes.push(format!(
+                "lost_update inconclusive: {lost} acknowledged write{} did not show in `{}`, \
+                 but a recheck could not confirm the loss: {why}. Name a read tool that \
+                 returns everything stored with --read-tool",
+                if lost == 1 { "" } else { "s" },
+                self.read_tool
+            ));
+        };
+
+        let mut written = Vec::new();
+        for seq in 0..RECHECK_WRITES {
+            let mark = marker(nonce, "r", seq);
+            let args = render(&self.write_args, "recheck", seq, &mark);
+            let label = format!("recheck write {seq}");
+            if call_strict(session, &self.write_tool, &args, ctx, &mut outcome, &label)
+                .await
+                .is_none()
+            {
+                unconfirmed(&mut outcome, format!("`{}` failed", self.write_tool), true);
+                return outcome;
+            }
+            written.push(mark);
+        }
+        let Some(read) = call_strict(
+            session,
+            &self.read_tool,
+            &self.read_args,
+            ctx,
+            &mut outcome,
+            "recheck read",
+        )
+        .await
+        else {
+            unconfirmed(&mut outcome, "the second read failed".to_owned(), true);
+            return outcome;
+        };
+
+        let unlisted = written.iter().filter(|mark| !contains(&read, mark)).count();
+        let dropped = shown.iter().filter(|mark| !contains(&read, mark)).count();
+        let reappeared = missing.iter().filter(|mark| contains(&read, mark)).count();
+        // A capped or sorted read of a store that held other data can drop
+        // that data, not a marker, to make room for the recheck writes.
+        let run_prefix = format!("mlt{nonce}");
+        let evicted = evicted_entries(first, &read, &run_prefix);
+        if unlisted > 0 || dropped > 0 || evicted > 0 {
+            unconfirmed(
+                &mut outcome,
+                format!(
+                    "after {RECHECK_WRITES} more writes made one at a time, the second read \
+                     lacked {unlisted} of them, {dropped} marker{} and {evicted} other \
+                     entr{} the first read showed, so the read does not list everything \
+                     stored (it may cap, page or sort its output)",
+                    if dropped == 1 { "" } else { "s" },
+                    if evicted == 1 { "y" } else { "ies" }
+                ),
+                false,
+            );
+        } else if reappeared > 0 {
+            unconfirmed(
+                &mut outcome,
+                format!(
+                    "{reappeared} of the missing markers appeared in a second read, so the \
+                     read does not yet show every acknowledged write when it answers"
+                ),
+                false,
+            );
+        } else {
+            outcome.notes.extend(loss_notes);
+            outcome.notes.push(format!(
+                "lost_update: confirmed by a recheck: after {RECHECK_WRITES} more writes made \
+                 one at a time, `{}` showed all of them and everything it showed before, and \
+                 still lacks the missing markers",
+                self.read_tool
             ));
         }
         outcome
@@ -499,6 +648,10 @@ impl LostUpdate {
             Some("concurrent must be >= 2")
         } else if self.writes_per_worker == 0 {
             Some("writes_per_worker must be >= 1")
+        } else if self.concurrent > MAX_FOUR_DIGITS || self.writes_per_worker > MAX_FOUR_DIGITS {
+            // Worker and sequence numbers must fit their four-digit fields,
+            // or markers outgrow MARKER_LEN.
+            Some("concurrent and writes_per_worker must be <= 10000")
         } else if !has_marker(&self.write_args) {
             Some("write_args must contain {marker} in a string value")
         } else {
@@ -663,6 +816,68 @@ fn error_text(result: &CallToolResult) -> String {
     }
 }
 
+/// How many entries of `first` that hold no marker of this run (`run_prefix`)
+/// are missing from `second`. An entry is a line of text, or a string inside
+/// JSON a text holds; digit runs compare equal, so a count or a timestamp
+/// that moved between the reads is not a missing entry.
+fn evicted_entries(first: &CallToolResult, second: &CallToolResult, run_prefix: &str) -> usize {
+    let counts = |result: &CallToolResult| {
+        let mut out = std::collections::HashMap::<String, usize>::new();
+        let mut entries = Vec::new();
+        let value = call_tool_result_to_value(result);
+        // `_meta` and the envelope are not store data.
+        collect_entries(&value["content"], &mut entries);
+        collect_entries(&value["structuredContent"], &mut entries);
+        for entry in entries.into_iter().filter(|e| !e.contains(run_prefix)) {
+            *out.entry(without_digits(&entry)).or_default() += 1;
+        }
+        out
+    };
+    let after = counts(second);
+    counts(first)
+        .into_iter()
+        .map(|(entry, n)| n.saturating_sub(after.get(&entry).copied().unwrap_or(0)))
+        .sum()
+}
+
+fn collect_entries(value: &Value, out: &mut Vec<String>) {
+    match value {
+        Value::String(text) => match serde_json::from_str::<Value>(text) {
+            Ok(inner @ (Value::Array(_) | Value::Object(_))) => collect_entries(&inner, out),
+            _ => out.extend(
+                text.lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .map(str::to_owned),
+            ),
+        },
+        Value::Array(items) => items.iter().for_each(|item| collect_entries(item, out)),
+        // Keys too: a store keyed by record ID can lose a key whose value
+        // another record repeats.
+        Value::Object(map) => {
+            for (key, item) in map {
+                out.push(key.clone());
+                collect_entries(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn without_digits(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if c.is_ascii_digit() {
+            if !out.ends_with('#') {
+                out.push('#');
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn contains(result: &CallToolResult, mark: &str) -> bool {
     call_tool_result_to_value(result).to_string().contains(mark)
 }
@@ -715,6 +930,45 @@ mod tests {
     }
 
     #[test]
+    fn evicted_entries_counts_other_data_a_read_dropped() {
+        let result = |text: &str| CallToolResult {
+            meta: None,
+            content: vec![Content::Text {
+                text: text.to_owned(),
+            }],
+            is_error: false,
+            structured_content: None,
+        };
+        let prefix = "mltabcd1234";
+        // A capped JSON listing: the recheck markers pushed two older
+        // records out while every marker the first read showed stayed.
+        let first = result(r#"["alpha", "beta", "mltabcd1234w0000s0000x"]"#);
+        let second = result(
+            r#"["mltabcd1234w0000s0000x", "mltabcd1234w000rs0000x", "mltabcd1234w000rs0001x"]"#,
+        );
+        assert_eq!(evicted_entries(&first, &second, prefix), 2);
+        // A complete listing keeps them; a count or timestamp that moved
+        // is not an eviction.
+        let first = result("Found 3 items at 10:01\nalpha\nbeta\nmltabcd1234w0000s0000x");
+        let second = result(
+            "Found 5 items at 10:02\nalpha\nbeta\nmltabcd1234w0000s0000x\n\
+             mltabcd1234w000rs0000x\nmltabcd1234w000rs0001x",
+        );
+        assert_eq!(evicted_entries(&first, &second, prefix), 0);
+        // Records keyed by ID with the same value: a dropped key counts.
+        let first =
+            result(r#"{"alpha": "todo", "beta": "todo", "mltabcd1234w0000s0000x": "todo"}"#);
+        let second = result(
+            r#"{"beta": "todo", "mltabcd1234w0000s0000x": "todo", "mltabcd1234w000rs0000x": "todo"}"#,
+        );
+        assert_eq!(evicted_entries(&first, &second, prefix), 1);
+        // Repeated entries count: one of two `item` lines gone is one.
+        let first = result("item 1\nitem 2");
+        let second = result("item 2");
+        assert_eq!(evicted_entries(&first, &second, prefix), 1);
+    }
+
+    #[test]
     fn error_text_is_one_capped_line() {
         let result = |text: &str| CallToolResult {
             meta: None,
@@ -739,6 +993,8 @@ mod tests {
         let short = marker("abcd1234", "1", 1);
         let long = marker("abcd1234", "1", 10);
         assert_eq!(short.len(), long.len());
+        assert_eq!(short.len(), MARKER_LEN);
+        assert_eq!(marker("abcd1234", "r", 2).len(), MARKER_LEN);
         assert!(!long.contains(&short) && !short.contains(&long));
     }
 
@@ -752,6 +1008,7 @@ mod tests {
             read_tool: "read".into(),
             read_args: json!({}),
             pipelined: false,
+            recheck_losses: false,
         };
         assert_eq!(plan.validation_error(), None);
         plan.write_args = json!({ "item": "fixed" });
@@ -766,5 +1023,15 @@ mod tests {
                 .unwrap()
                 .contains("writes_per_worker")
         );
+        // Indexes past 9999 would make markers longer than MARKER_LEN.
+        plan.writes_per_worker = 10_000;
+        plan.concurrent = 10_000;
+        assert_eq!(plan.validation_error(), None);
+        assert_eq!(marker("abcd1234", "9999", 9999).len(), MARKER_LEN);
+        plan.concurrent = 10_001;
+        assert!(plan.validation_error().unwrap().contains("<= 10000"));
+        plan.concurrent = 2;
+        plan.writes_per_worker = 10_001;
+        assert!(plan.validation_error().unwrap().contains("<= 10000"));
     }
 }

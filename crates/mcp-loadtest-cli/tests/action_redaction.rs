@@ -265,6 +265,32 @@ fn action_mode_redacts_lost_update_stderr_and_reports() {
     assert!(report_files > 0, "the passing run wrote no reports");
 }
 
+/// Without the tool flags, `lost-update` lists the server's tools first; that
+/// discovery session is redacted like the check's own.
+#[test]
+fn action_mode_redacts_lost_update_tool_discovery() {
+    let temp = tempdir().expect("tempdir");
+    let output_dir = path_text(temp.path());
+    let python = std::env::var("MCP_LOADTEST_PYTHON").unwrap_or_else(|_| "python".to_string());
+    let echo_argv = format!(
+        "{python} -c __import__('sys').stderr.write(str(__import__('sys').argv)) {SENTINEL}"
+    );
+    for server in [
+        format!("no-such-action-binary --token {SENTINEL}"),
+        echo_argv,
+    ] {
+        let discovery = run_cli(&[
+            "lost-update",
+            "--server",
+            &server,
+            "--output-dir",
+            &output_dir,
+            "--action-redact-server-identity",
+        ]);
+        assert_redacted(&discovery, &server);
+    }
+}
+
 /// The repro script embeds the server command, so Action mode refuses it.
 #[test]
 fn action_mode_refuses_emit_repro() {

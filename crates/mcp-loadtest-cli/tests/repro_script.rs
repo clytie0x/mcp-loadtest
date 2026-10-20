@@ -45,10 +45,10 @@ async fn check(mode: &str, store: &Path, script: &Path, sdk: ReproSdk) -> anyhow
     let request = ReproRequest::new(script.to_path_buf(), Some(sdk))?;
     run_lost_update(
         &store_target(mode, store),
-        "append",
-        r#"{"item":"{marker}"}"#,
-        "read",
-        "{}",
+        Some("append"),
+        Some(r#"{"item":"{marker}"}"#),
+        Some("read"),
+        Some("{}"),
         5,
         2,
         true,
@@ -116,10 +116,10 @@ async fn emitting_a_repro_needs_the_pipelined_mode() {
     let request = ReproRequest::new(dir.path().join("repro.py"), None).expect("sdk from extension");
     let err = run_lost_update(
         &store_target("safe", &dir.path().join("store")),
-        "append",
-        r#"{"item":"{marker}"}"#,
-        "read",
-        "{}",
+        Some("append"),
+        Some(r#"{"item":"{marker}"}"#),
+        Some("read"),
+        Some("{}"),
         4,
         1,
         false,

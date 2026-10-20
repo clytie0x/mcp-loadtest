@@ -88,6 +88,8 @@ pub(super) async fn lost_update(args: &Value) -> Result<Value, ToolError> {
                 .as_bool()
                 .ok_or_else(|| ToolError::InvalidArgs("pipelined must be a boolean".into()))?,
         },
+        // The caller names its read tool, so it vouches for it.
+        recheck_losses: false,
     };
     if plan.pipelined && args.get("server_url").is_some() {
         return Err(ToolError::InvalidArgs(

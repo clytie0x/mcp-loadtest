@@ -160,7 +160,7 @@ pub fn pick_probe_tool(tools: &[Tool]) -> Option<&Tool> {
         .find(|tool| marked_read_only(tool) && !marked_destructive(tool) && takes_no_args(tool))
 }
 
-fn annotation(tool: &Tool, name: &str) -> Option<bool> {
+pub(crate) fn annotation(tool: &Tool, name: &str) -> Option<bool> {
     tool.annotations.as_ref()?.get(name)?.as_bool()
 }
 
@@ -241,7 +241,7 @@ fn no_qualifying_tool_message(tools: &[Tool]) -> String {
 
 /// Escape control characters in a server-supplied string before it reaches
 /// the terminal.
-fn printable(text: &str) -> String {
+pub(crate) fn printable(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
         if c.is_control() {

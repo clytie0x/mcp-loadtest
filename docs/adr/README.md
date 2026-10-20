@@ -40,6 +40,7 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0032](0032-lost-update-refused-writes.md)    | A refused write is not a lost-update error (amends 0027)              | Accepted |
 | [0033](0033-pipelined-lost-update.md)         | Pipelined lost-update check on one session (extends 0027)             | Accepted |
 | [0034](0034-sdk-repro-script.md)              | Write an official-SDK repro script from a pipelined lost-update finding (extends 0033) | Accepted |
+| [0035](0035-lost-update-picks-tools.md)       | `lost-update` picks its write and read tools when they are omitted    | Accepted |
 
 ## When to write a new ADR
 

@@ -56,18 +56,25 @@ read returns all of them:
 ```bash
 mcp-loadtest lost-update \
   --server "npx -y @modelcontextprotocol/server-memory@2026.8.31" \
-  --env MEMORY_FILE_PATH=/tmp/probe.jsonl --startup-timeout 60s \
-  --write-tool create_entities \
-  --write-args '{"entities":[{"name":"{marker}","entityType":"probe","observations":[]}]}' \
-  --read-tool read_graph
+  --env MEMORY_FILE_PATH=/tmp/probe.jsonl --startup-timeout 60s
 ```
 
 ```text
+no --write-tool given; writing with `create_entities` (the server marks it not read-only, not destructive and closed-world) and arguments built from its input schema: {"entities":[{"entityType":"{marker}","name":"{marker}","observations":["{marker}"]}]}. …
+no --read-tool given; reading with `read_graph` (the server marks it read-only and it takes no arguments). …
 Status: FAIL (36 lost updates)
-Error: lost-update failed — 36 lost updates; 53/53 successful calls; see report
+Error: lost-update failed — 36 lost updates; 57/57 successful calls; see report
 ```
 
-Every call succeeded, and 36 of 50 writes were gone. See
+Every call succeeded, and 36 of 50 writes were gone. Without
+`--write-tool`, `--write-args` and `--read-tool`, the check picks a write
+the server marks non-destructive and closed-world, builds its arguments from
+the input schema, and picks a read-only tool that takes no arguments. Those
+marks are the server's own hints, and the writes are real, so point it at a
+disposable store. A loss seen through a picked read is confirmed with a
+second read before it fails the run. If no tool qualifies, it lists the
+tools and stops; name them with `--write-tool` and `--read-tool`
+([details](docs/examples/lost-update.md#letting-it-choose-the-tools)). See
 [field results](docs/field-results.md) for this server and
 mcp-knowledge-graph, and `race-check` for different answers to identical
 calls.

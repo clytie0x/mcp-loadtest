@@ -2,7 +2,7 @@
 """mock-store: an append/read store for the lost_update detector.
 
     mock-store.py --mode racy|inplace|safe|memory|last|refusing|closed|stalling
-                  [--store PATH] [--concurrent]
+                  [--store PATH] [--concurrent] [--autopick] [--read-limit N]
 
 PATH defaults to $MOCK_STORE_PATH; a relative PATH resolves against the
 working directory.
@@ -29,6 +29,27 @@ working directory.
 --concurrent handles each `append` on its own thread, as an async server
 does, so pipelined writes on one session race inside one process. Without
 it, requests are handled one at a time in arrival order.
+
+--autopick lists, instead of `append` and `read`, annotated tools for
+`lost-update` without --write-tool and --read-tool (ADR 0035). In listed
+order, only `record` qualifies as the write and `list_items` is the
+preferred read:
+
+  wipe          destructive, no arguments
+  post_note     not marked closed-world (openWorldHint absent)
+  set_label     its only string must match a pattern
+  update_entry  qualifies, but its name does not read like a creation
+  record        {entries: [{item, kind: enum}], count: integer >= 1}
+  get_status    read-only, no arguments, but its name is not a listing
+  list_page     read-only, but takes an optional `limit`
+  search        read-only, requires `query`
+  list_items    read-only, no arguments: returns every item
+
+`record` stores each entry's `item` and rejects arguments of another shape
+with a JSON-RPC error; every other tool but `list_items` errors too.
+
+--read-limit N makes the read return only the first N items, the way a
+listing with a default page size does.
 """
 
 import json
@@ -70,6 +91,104 @@ TOOLS = [
 ]
 
 
+RECORD_ANNOTATIONS = {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}
+NO_ARGS = {"type": "object", "properties": {}}
+
+AUTOPICK_TOOLS = [
+    {
+        "name": "wipe",
+        "description": "Delete every item.",
+        "inputSchema": NO_ARGS,
+        "annotations": {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": False},
+    },
+    {
+        "name": "post_note",
+        "description": "Post a note to a channel.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        },
+        "annotations": {"readOnlyHint": False, "destructiveHint": False},
+    },
+    {
+        "name": "set_label",
+        "description": "Set the store's label.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"label": {"type": "string", "pattern": "^[a-z]+$"}},
+            "required": ["label"],
+        },
+        "annotations": RECORD_ANNOTATIONS,
+    },
+    {
+        "name": "update_entry",
+        "description": "Update an existing entry.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"entry": {"type": "string"}},
+            "required": ["entry"],
+        },
+        "annotations": RECORD_ANNOTATIONS,
+    },
+    {
+        "name": "record",
+        "description": "Record entries.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {"$ref": "#/$defs/entry"},
+                },
+                "count": {"type": "integer", "minimum": 1},
+                "comment": {"type": "string"},
+            },
+            "required": ["entries", "count"],
+            "$defs": {
+                "entry": {
+                    "type": "object",
+                    "properties": {
+                        "item": {"type": "string", "maxLength": 64},
+                        "kind": {"type": "string", "enum": ["note", "task"]},
+                    },
+                    "required": ["item", "kind"],
+                },
+            },
+        },
+        "annotations": RECORD_ANNOTATIONS,
+    },
+    {
+        "name": "get_status",
+        "description": "Report the server status.",
+        "inputSchema": NO_ARGS,
+        "annotations": {"readOnlyHint": True},
+    },
+    {
+        "name": "list_page",
+        "description": "List one page of items.",
+        "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer"}}},
+        "annotations": {"readOnlyHint": True},
+    },
+    {
+        "name": "search",
+        "description": "Search items.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+        "annotations": {"readOnlyHint": True},
+    },
+    {
+        "name": "list_items",
+        "description": "Return every stored item, one per line.",
+        "inputSchema": NO_ARGS,
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+    },
+]
+
+
 def arg(name, default=None):
     if name in sys.argv:
         return sys.argv[sys.argv.index(name) + 1]
@@ -81,6 +200,10 @@ STORE = arg("--store", os.environ.get("MOCK_STORE_PATH"))
 MEMORY = []
 WRITES = 0
 CONCURRENT = "--concurrent" in sys.argv
+AUTOPICK = "--autopick" in sys.argv
+READ_LIMIT = int(arg("--read-limit", "0"))
+WRITE_TOOL = "record" if AUTOPICK else "append"
+READ_TOOL = "list_items" if AUTOPICK else "read"
 SEND_LOCK = threading.Lock()
 WRITES_LOCK = threading.Lock()
 CONFLICT = "REVISION_CONFLICT: the store changed after it was read.\nRead it again and retry."
@@ -158,6 +281,11 @@ def append(item):
 
 
 def read_all():
+    items = read_store()
+    return items[:READ_LIMIT] if READ_LIMIT else items
+
+
+def read_store():
     if MODE == "memory":
         return list(MEMORY)
     path = pathlib.Path(STORE)
@@ -187,6 +315,27 @@ def handle_append(msg_id, item):
     reply(msg_id, {"content": [{"type": "text", "text": "ok"}]})
 
 
+def recorded_item(args):
+    """The item a well-formed `record` call carries, or None."""
+    entries = args.get("entries")
+    if not isinstance(entries, list) or len(entries) != 1 or args.get("count") != 1:
+        return None
+    entry = entries[0]
+    if not isinstance(entry, dict) or entry.get("kind") not in ("note", "task"):
+        return None
+    item = entry.get("item")
+    return item if isinstance(item, str) else None
+
+
+def write_item(name, args):
+    """The item a write call stores, or None if the call is not a write."""
+    if name != WRITE_TOOL:
+        return None
+    if AUTOPICK:
+        return recorded_item(args)
+    return str(args.get("item", ""))
+
+
 def main():
     protocol_version = cli_protocol_version()
     while True:
@@ -200,22 +349,22 @@ def main():
         if method == "initialize":
             respond_initialize(msg_id, protocol_version=protocol_version)
         elif method == "tools/list":
-            respond_tools_list(msg_id, TOOLS)
+            respond_tools_list(msg_id, AUTOPICK_TOOLS if AUTOPICK else TOOLS)
         elif method == "tools/call":
             params = msg.get("params", {})
             name = params.get("name")
             args = params.get("arguments", {})
-            if name == "append" and CONCURRENT:
-                item = str(args.get("item", ""))
+            item = write_item(name, args)
+            if item is not None and CONCURRENT:
                 threading.Thread(target=handle_append, args=(msg_id, item), daemon=True).start()
-            elif name == "append":
-                handle_append(msg_id, str(args.get("item", "")))
-            elif name == "read":
+            elif item is not None:
+                handle_append(msg_id, item)
+            elif name == READ_TOOL:
                 text = "\n".join(read_all())
                 reply(msg_id, {"content": [{"type": "text", "text": text}]})
             else:
                 with SEND_LOCK:
-                    respond_error(msg_id, -32602, f"unknown tool: {name}")
+                    respond_error(msg_id, -32602, f"unknown tool or malformed arguments: {name}")
         else:
             respond_error(msg_id, -32601, f"method not found: {method}")
 

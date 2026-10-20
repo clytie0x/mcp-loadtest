@@ -13,12 +13,13 @@ use mcp_loadtest::config::{
     Config, OutputConfig, ScenarioConfig, ServerConfig, split_server_command,
 };
 use mcp_loadtest::report::{Report, failure_reasons};
-use mcp_loadtest::run::Run;
+use mcp_loadtest::run::{Run, list_all_tools};
 use mcp_loadtest::scenario::Scenario;
 use mcp_loadtest::scenario::lost_update::LostUpdate;
 use mcp_loadtest::scenario::race_check::RaceCheck;
 
 use crate::emit::emit_reports;
+use crate::lost_update_pick;
 use crate::repro::{ReproPlan, ReproRequest};
 
 /// The stdio server a detector subcommand spawns for every session.
@@ -60,34 +61,38 @@ pub async fn run_race_check(
 /// uniquely-marked writes, and one read must return every acknowledged one.
 /// With `pipelined`, one session sends each round's writes back to back.
 ///
+/// A missing `write_tool` or `read_tool` is picked from the server's
+/// `tools/list` by its hints, and missing `write_args` are built from the
+/// write tool's input schema (see [`lost_update_pick::resolve`]). Each
+/// choice is printed to stderr. `write_args` needs `write_tool`, and
+/// `read_args` (default `{}`) needs `read_tool`.
+///
 /// With `repro` (pipelined only), a run that finds lost updates also writes
 /// a script that reproduces them on the official MCP SDK (ADR 0034).
 #[allow(clippy::too_many_arguments)] // mirrors the CLI flags
 pub async fn run_lost_update(
     target: &DetectTarget,
-    write_tool: &str,
-    write_args: &str,
-    read_tool: &str,
-    read_args: &str,
+    write_tool: Option<&str>,
+    write_args: Option<&str>,
+    read_tool: Option<&str>,
+    read_args: Option<&str>,
     concurrent: u32,
     writes_per_worker: u32,
     pipelined: bool,
     repro: Option<&ReproRequest>,
     output_dir: &Path,
 ) -> Result<()> {
-    let scenario = LostUpdate {
-        concurrent,
-        writes_per_worker,
-        write_tool: write_tool.to_owned(),
-        write_args: parse_json_object("--write-args", write_args, target.redact_server_identity)?,
-        read_tool: read_tool.to_owned(),
-        read_args: parse_json_object("--read-args", read_args, target.redact_server_identity)?,
-        pipelined,
-    };
-    if let Some(message) = scenario.validation_error() {
-        anyhow::bail!("invalid lost-update plan: {message}");
+    if write_tool.is_none() && write_args.is_some() {
+        anyhow::bail!(
+            "--write-args needs --write-tool: arguments only make sense for a tool you name"
+        );
     }
-    let repro = match repro {
+    if read_tool.is_none() && read_args.is_some() {
+        anyhow::bail!(
+            "--read-args needs --read-tool: arguments only make sense for a tool you name"
+        );
+    }
+    match repro {
         Some(_) if !pipelined => anyhow::bail!(
             "--emit-repro needs --pipelined: the script reproduces writes lost inside one \
              server process"
@@ -97,6 +102,56 @@ pub async fn run_lost_update(
         Some(_) if target.redact_server_identity => {
             anyhow::bail!("--emit-repro is not available in Action mode")
         }
+        _ => {}
+    }
+    let redact = target.redact_server_identity;
+    let write_args = write_args
+        .map(|raw| parse_json_object("--write-args", raw, redact))
+        .transpose()?;
+    let read_args = match read_args {
+        Some(raw) => parse_json_object("--read-args", raw, redact)?,
+        None => json!({}),
+    };
+    let server = server_config(target)?;
+
+    let tools = match (write_tool, write_args, read_tool) {
+        (Some(write_tool), Some(write_args), Some(read_tool)) => {
+            lost_update_pick::LostUpdateTools {
+                write_tool: write_tool.to_owned(),
+                write_args,
+                read_tool: read_tool.to_owned(),
+                read_picked: false,
+                notices: Vec::new(),
+            }
+        }
+        (write_tool, write_args, read_tool) => {
+            // Same server settings as the check; the discovery session is
+            // shut down before the check starts its own.
+            let listed = list_all_tools(&server, redact)
+                .await
+                .context("listing the server's tools to choose the missing ones")?;
+            lost_update_pick::resolve(&listed, write_tool, write_args, read_tool)
+                .map_err(anyhow::Error::msg)?
+        }
+    };
+    for notice in &tools.notices {
+        eprintln!("{notice}");
+    }
+
+    let scenario = LostUpdate {
+        concurrent,
+        writes_per_worker,
+        write_tool: tools.write_tool,
+        write_args: tools.write_args,
+        read_tool: tools.read_tool,
+        read_args,
+        pipelined,
+        recheck_losses: tools.read_picked,
+    };
+    if let Some(message) = scenario.validation_error() {
+        anyhow::bail!("invalid lost-update plan: {message}");
+    }
+    let repro = match repro {
         Some(request) => {
             let (command, args) = split_server_command(&target.server)
                 .with_context(|| format!("parsing --server `{}`", target.server))?;
@@ -117,7 +172,14 @@ pub async fn run_lost_update(
         }
         None => None,
     };
-    let report = execute(target, "lost_update", Box::new(scenario), output_dir).await?;
+    let report = execute_on(
+        server,
+        redact,
+        "lost_update",
+        Box::new(scenario),
+        output_dir,
+    )
+    .await?;
     if let Some((request, plan)) = repro {
         request.write_for(&plan, &report)?;
     }
@@ -149,13 +211,8 @@ fn parse_env(pairs: &[String], redact: bool) -> Result<BTreeMap<String, String>>
         .collect()
 }
 
-/// Drive `scenario` and write the terminal, markdown, and JSON reports.
-async fn execute(
-    target: &DetectTarget,
-    kind: &str,
-    scenario: Box<dyn Scenario>,
-    output_dir: &Path,
-) -> Result<Report> {
+/// The stdio server config every session of a detector run uses.
+fn server_config(target: &DetectTarget) -> Result<ServerConfig> {
     let server_parts = split_server_command(&target.server);
     let (command, cmd_args) = if target.redact_server_identity {
         server_parts
@@ -166,12 +223,40 @@ async fn execute(
     let mut server = ServerConfig::stdio(command, cmd_args);
     server.env = parse_env(&target.env, target.redact_server_identity)?;
     server.startup_timeout = target.startup_timeout;
+    Ok(server)
+}
 
+/// Drive `scenario` and write the terminal, markdown, and JSON reports.
+async fn execute(
+    target: &DetectTarget,
+    kind: &str,
+    scenario: Box<dyn Scenario>,
+    output_dir: &Path,
+) -> Result<Report> {
+    let server = server_config(target)?;
+    execute_on(
+        server,
+        target.redact_server_identity,
+        kind,
+        scenario,
+        output_dir,
+    )
+    .await
+}
+
+/// [`execute`] with the server config already built.
+async fn execute_on(
+    server: ServerConfig,
+    redact_server_identity: bool,
+    kind: &str,
+    scenario: Box<dyn Scenario>,
+    output_dir: &Path,
+) -> Result<Report> {
     let formats: Vec<String> = vec!["terminal".into(), "markdown".into(), "json".into()];
     let config = Config::new(server, ScenarioConfig::new(kind, json!({})))
         .with_output(OutputConfig::new(output_dir.to_path_buf(), formats.clone()));
     let mut run = Run::new(config, scenario, output_dir.to_path_buf());
-    if target.redact_server_identity {
+    if redact_server_identity {
         run = run.with_redacted_server_identity();
     }
     let report = run.execute().await?;

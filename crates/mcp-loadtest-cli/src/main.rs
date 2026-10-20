@@ -217,19 +217,27 @@ pub(crate) enum Cmd {
         /// Server command, parsed shell-style: `"python -m my_mcp"`.
         #[arg(short, long)]
         server: String,
-        /// Tool that records one write.
+        /// Tool that records one write. If omitted, the check lists the
+        /// server's tools and picks one the server marks not read-only, not
+        /// destructive and closed-world whose arguments it can build. The
+        /// choice is printed; those marks are the server's own hints.
         #[arg(long)]
-        write_tool: String,
+        write_tool: Option<String>,
         /// Write arguments as a JSON object. A string value must contain
-        /// `{marker}`; `{worker}` and `{seq}` are also substituted.
+        /// `{marker}`; `{worker}` and `{seq}` are also substituted. If
+        /// omitted, they are built from the write tool's input schema.
+        /// Requires --write-tool.
+        #[arg(long, requires = "write_tool")]
+        write_args: Option<String>,
+        /// Tool whose result must contain every acknowledged marker. If
+        /// omitted, the check picks one the server marks read-only that takes
+        /// no arguments, and confirms any loss with a second read.
         #[arg(long)]
-        write_args: String,
-        /// Tool whose result must contain every acknowledged marker.
-        #[arg(long)]
-        read_tool: String,
-        /// Read arguments as a JSON object.
-        #[arg(long, default_value = "{}")]
-        read_args: String,
+        read_tool: Option<String>,
+        /// Read arguments as a JSON object (default `{}`). Requires
+        /// --read-tool.
+        #[arg(long, requires = "read_tool")]
+        read_args: Option<String>,
         /// Independent sessions writing at once (at least 2).
         #[arg(long, default_value_t = 10)]
         concurrent: u32,

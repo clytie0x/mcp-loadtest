@@ -118,6 +118,8 @@ pub(crate) fn build_scenario(kind: &str, params: &Value) -> Result<Box<dyn Scena
                         .as_bool()
                         .ok_or_else(|| anyhow!("scenario.pipelined must be a boolean"))?,
                 },
+                // A config names its read tool, so the user vouches for it.
+                recheck_losses: false,
             };
             if let Some(message) = plan.validation_error() {
                 return Err(anyhow!("scenario: {message}"));
