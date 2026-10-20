@@ -472,17 +472,37 @@ arbitrary server's tools write or how to read the result back, so the plan
 is an opt-in tool contract: a server that wants this coverage exposes two
 tools in its conformance build, for example `conformance_append` (takes a
 string `item` and stores it in shared state) and `conformance_read` (returns
-every stored item). The scenario sends N `conformance_append` calls, each
-with a unique marker, sent together without waiting between them; after
-all of their responses have arrived, it calls `conformance_read` once, and
-checks that every write that returned a
-successful result is visible; writes that returned `isError` are allowed. It
-maps to the new MUST NOT. Servers that do not implement the contract skip
-the scenario. If maintainers prefer not to add a tool contract, the
-fallback is to record the requirement as a framework-gap exclusion with a
-tracking issue, as the SEP conformance rules allow. Either way, the author
-offers to contribute the scenario, based on mcp-loadtest's `lost_update`
-check, which already does this against real servers.
+every stored item). Servers that do not implement the contract skip the
+scenario. If maintainers prefer not to add a tool contract, the fallback is
+to record the requirement as a framework-gap exclusion with a tracking
+issue, as the SEP conformance rules allow.
+
+The scenario has three steps:
+
+1. **Sequential check.** Send one `conformance_append` with a marker, wait
+   for it, and call `conformance_read`. If the call fails or the marker is
+   missing, the contract is not working and the scenario is reported as
+   skipped, not as a pass or a fail.
+2. **Concurrent writes.** Send N `conformance_append` calls, each with a
+   unique marker, together without waiting between them, and wait for every
+   response.
+3. **Verification read.** Call `conformance_read` once and check that every
+   write that returned a successful result is visible. Writes that returned
+   `isError` are allowed. If none of the N writes succeeded, the run
+   exercised nothing and is reported as inconclusive, not as conformant.
+
+Traceability, one row per normative statement in the Specification section:
+
+| Statement | Coverage |
+|---|---|
+| Server MUST NOT return success for a modification whose effect is then lost (outcome matches a sequential order) | The scenario above |
+| Servers SHOULD assume any two tool calls can execute concurrently | Exclusion: an assumption, not observable behaviour; the MUST NOT check covers its consequence |
+| Server SHOULD serialize conflicting modifications or refuse them with a tool execution error | Covered indirectly: the scenario accepts either outcome and fails only on silent loss. Which remedy a server uses is not observable, so the choice itself is an exclusion |
+| Clients SHOULD NOT assume concurrent tool calls take effect in the order sent | Exclusion: describes what a client may rely on, with no observable client behaviour to test |
+| A client that needs one call to observe another SHOULD wait for the first response | Exclusion (framework gap): client mode would need an agent that issues dependent calls; tracking issue to be filed with the SEP |
+
+The author offers to contribute the scenario, based on mcp-loadtest's
+`lost_update` check, which already does this against real servers.
 
 ## Open Questions
 
