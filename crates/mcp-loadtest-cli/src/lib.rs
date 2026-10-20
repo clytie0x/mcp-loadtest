@@ -16,4 +16,5 @@ pub mod cmd_run;
 pub mod emit;
 pub mod explain;
 pub mod hints;
+pub mod lost_update_pick;
 pub mod repro;

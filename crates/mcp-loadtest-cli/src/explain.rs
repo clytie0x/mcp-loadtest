@@ -126,8 +126,22 @@ finds races inside one process, and needs no shared store.
 --emit-repro <path> (with --pipelined) writes a standalone script on the
 official MCP SDK when the run finds lost updates: one round of --concurrent
 writes, then the read. `.mjs` is Node, `.py` Python (--repro-sdk overrides).
-Tunable knobs: --concurrent, --writes-per-worker, --pipelined, --read-args,
-  --env, --startup-timeout, --emit-repro, --repro-sdk.
+Tools: --write-tool, --write-args, --read-tool, --read-args. Leave any of the
+  first three out and one session lists the server's tools first:
+  - no --write-tool: the first tool the server marks readOnlyHint not true,
+    destructiveHint=false and openWorldHint=false whose required arguments
+    can be filled, names like create_/add_ first;
+  - no --write-args: built from the write tool's inputSchema, with {marker}
+    in every required string and the smallest valid value elsewhere;
+  - no --read-tool: the first tool marked readOnlyHint=true, not
+    destructive, that takes no arguments, names like read_/list_ first. A
+    loss is then confirmed by 3 more writes made one at a time and a second
+    read; a read that cannot show them leaves the check inconclusive.
+  Each choice is printed. These marks are the server's own hints, not
+  guarantees. If nothing qualifies, it lists the tools and exits non-zero.
+  --write-args needs --write-tool, and --read-args needs --read-tool.
+Tunable knobs: --concurrent, --writes-per-worker, --pipelined, --env,
+  --startup-timeout, --emit-repro, --repro-sdk.
 `run` with `[scenario] type = \"lost_update\"` is the config form; see
 docs/examples/lost-update.md.
 ";

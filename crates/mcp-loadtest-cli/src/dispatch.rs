@@ -188,10 +188,10 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
             };
             cmd_detect::run_lost_update(
                 &target,
-                &write_tool,
-                &write_args,
-                &read_tool,
-                &read_args,
+                write_tool.as_deref(),
+                write_args.as_deref(),
+                read_tool.as_deref(),
+                read_args.as_deref(),
                 concurrent,
                 writes_per_worker,
                 pipelined,
