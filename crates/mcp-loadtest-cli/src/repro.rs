@@ -275,14 +275,31 @@ await client.connect(new StdioClientTransport({{
   env: {env},
 {cwd}}}));
 
-const write = (i, m) => client.callTool({{ name: {write_tool}, arguments: {write_args} }});
+// `w` is the worker ({{worker}}), `m` the marker.
+const write = (w, m) => client.callTool({{ name: {write_tool}, arguments: {write_args} }});
+const readStore = async (what) => {{
+  let result;
+  try {{
+    result = await client.callTool({{ name: {read_tool}, arguments: {read_args} }});
+  }} catch (e) {{
+    inconclusive(`the ${{what}} read failed (${{e}}), so nothing can be concluded about lost writes`);
+  }}
+  if (result.isError) {{
+    console.log(JSON.stringify(result.content));
+    inconclusive(`the ${{what}} read returned isError, so nothing can be concluded about lost writes`);
+  }}
+  return JSON.stringify(result);
+}};
 
 // A control write, alone, before the concurrent ones: data the store already
-// held must survive them too.
-const control = await write(0, CONTROL).catch((e) => ({{ isError: true, content: String(e) }}));
+// held must survive them too, and the read must be able to show it.
+const control = await write("control", CONTROL).catch((e) => ({{ isError: true, content: String(e) }}));
 if (control.isError) inconclusive("the control write failed, so the store cannot be checked");
+if (!(await readStore("control")).includes(CONTROL)) {{
+  inconclusive("the read does not show the control write, so it cannot show lost writes either");
+}}
 
-const results = await Promise.allSettled(Array.from({{ length: CALLS }}, (_, i) => write(i, marker(i))));
+const results = await Promise.allSettled(Array.from({{ length: CALLS }}, (_, i) => write(String(i), marker(i))));
 const acknowledged = [];
 let refused = 0;
 let failed = 0;
@@ -296,17 +313,11 @@ if (acknowledged.length === 0) {{
   inconclusive("no concurrent write was acknowledged, so there is nothing to check");
 }}
 
-const readResult = await client.callTool({{ name: {read_tool}, arguments: {read_args} }});
+console.log(`calls: ${{CALLS}} sent, ${{acknowledged.length}} succeeded, ${{refused}} isError, ${{failed}} failed`);
+const read = await readStore("final");
 await client.close();
-if (readResult.isError) {{
-  console.log(`calls: ${{CALLS}} sent, ${{acknowledged.length}} succeeded, ${{refused}} isError, ${{failed}} failed`);
-  console.log(JSON.stringify(readResult.content));
-  inconclusive("the read tool returned isError, so nothing can be concluded about lost writes");
-}}
-const read = JSON.stringify(readResult);
 const kept = acknowledged.filter((m) => read.includes(m));
 const controlKept = read.includes(CONTROL);
-console.log(`calls: ${{CALLS}} sent, ${{acknowledged.length}} succeeded, ${{refused}} isError, ${{failed}} failed`);
 console.log(`read: ${{kept.length}} of ${{acknowledged.length}} acknowledged writes are in the result; control write ${{controlKept ? "kept" : "missing"}}`);
 const lost = acknowledged.length - kept.length + (controlKept ? 0 : 1);
 if (lost > 0) {{
@@ -362,7 +373,8 @@ def marker(i):
     return f"mlt{{NONCE}}w{{i:04d}}s0000x"
 
 
-def write_args(i, m):
+def write_args(w, m):
+    # `w` is the worker ({{worker}}), `m` the marker.
     return {write_args}
 
 
@@ -383,7 +395,7 @@ async def main():
         # already held must survive them too.
         try:
             control = await asyncio.wait_for(
-                session.call_tool({write_tool}, write_args(0, CONTROL)), TIMEOUT
+                session.call_tool({write_tool}, write_args("control", CONTROL)), TIMEOUT
             )
         except Exception as e:  # noqa: BLE001
             print(f"INCONCLUSIVE: the control write failed ({{e}}), so the store cannot be checked")
@@ -391,9 +403,33 @@ async def main():
         if is_error(control):
             print("INCONCLUSIVE: the control write returned isError, so the store cannot be checked")
             return 2
+
+        async def read_store(what):
+            try:
+                result = await asyncio.wait_for(
+                    session.call_tool({read_tool}, {read_args}), TIMEOUT
+                )
+            except Exception as e:  # noqa: BLE001
+                print(f"INCONCLUSIVE: the {{what}} read failed ({{e!r}}), so nothing can be concluded")
+                return None
+            if is_error(result):
+                print(result.model_dump_json())
+                print(f"INCONCLUSIVE: the {{what}} read returned isError, so nothing can be concluded")
+                return None
+            return result.model_dump_json()
+
+        # The read must be able to show what the write stored.
+        seen = await read_store("control")
+        if seen is None:
+            return 2
+        if CONTROL not in seen:
+            print("INCONCLUSIVE: the read does not show the control write, so it cannot show lost writes either")
+            return 2
         results = await asyncio.gather(
             *(
-                asyncio.wait_for(session.call_tool({write_tool}, write_args(i, marker(i))), TIMEOUT)
+                asyncio.wait_for(
+                    session.call_tool({write_tool}, write_args(str(i), marker(i))), TIMEOUT
+                )
                 for i in range(CALLS)
             ),
             return_exceptions=True,
@@ -410,18 +446,12 @@ async def main():
             print(f"calls: {{CALLS}} sent, 0 succeeded, {{refused}} isError, {{failed}} failed")
             print("INCONCLUSIVE: no concurrent write was acknowledged, so there is nothing to check")
             return 2
-        read_result = await asyncio.wait_for(
-            session.call_tool({read_tool}, {read_args}), TIMEOUT
-        )
-    if is_error(read_result):
         print(f"calls: {{CALLS}} sent, {{len(acknowledged)}} succeeded, {{refused}} isError, {{failed}} failed")
-        print("INCONCLUSIVE: the read tool returned isError, so nothing can be concluded about lost writes")
-        print(read_result.model_dump_json())
-        return 2
-    read = read_result.model_dump_json()
+        read = await read_store("final")
+        if read is None:
+            return 2
     kept = [m for m in acknowledged if m in read]
     control_kept = CONTROL in read
-    print(f"calls: {{CALLS}} sent, {{len(acknowledged)}} succeeded, {{refused}} isError, {{failed}} failed")
     print(
         f"read: {{len(kept)}} of {{len(acknowledged)}} acknowledged writes are in the result; "
         f"control write {{'kept' if control_kept else 'missing'}}"
@@ -536,8 +566,7 @@ fn key_lit(key: &str, sdk: ReproSdk) -> String {
 /// substituted value contains a brace.
 fn template(s: &str, sdk: ReproSdk) -> String {
     let worker = match sdk {
-        ReproSdk::Node => "String(i)",
-        ReproSdk::Python => "str(i)",
+        ReproSdk::Node | ReproSdk::Python => "w",
     };
     let placeholders = [
         (MARKER_PLACEHOLDER, "m"),
@@ -618,9 +647,9 @@ mod tests {
         assert_eq!(template("{marker}", ReproSdk::Node), "m");
         assert_eq!(
             template("w{worker}-s{seq}:{marker}!", ReproSdk::Node),
-            r#""w" + String(i) + "-s0:" + m + "!""#
+            r#""w" + w + "-s0:" + m + "!""#
         );
-        assert_eq!(template("{worker}{marker}", ReproSdk::Python), "str(i) + m");
+        assert_eq!(template("{worker}{marker}", ReproSdk::Python), "w + m");
         assert_eq!(template("", ReproSdk::Python), r#""""#);
         assert_eq!(template("{mark}er}", ReproSdk::Node), r#""{mark}er}""#);
     }
@@ -666,9 +695,10 @@ mod tests {
             r#"name: "list_requests", arguments: {}"#,
             "Promise.allSettled",
             "process.exitCode = 1;",
-            "if (readResult.isError) {",
+            "if (result.isError) {",
             "process.exit(2);",
-            "const control = await write(0, CONTROL)",
+            r#"const control = await write("control", CONTROL)"#,
+            r#"(await readStore("control")).includes(CONTROL)"#,
             "if (acknowledged.length === 0) {",
             "const controlKept = read.includes(CONTROL);",
         ] {
@@ -699,14 +729,15 @@ mod tests {
             r#"        env={**os.environ, "TASK_MANAGER_FILE_PATH": "/tmp/t.json"},"#,
             r#"        cwd="/srv/app","#,
             r#"    return {"originalRequest": m, "tasks": [{"description": m, "title": m}]}"#,
-            r#"session.call_tool("request_planning", write_args(i, marker(i))), TIMEOUT)"#,
-            r#"write_args(0, CONTROL)"#,
+            r#"session.call_tool("request_planning", write_args(str(i), marker(i))), TIMEOUT"#,
+            r#"write_args("control", CONTROL)"#,
+            r#"seen = await read_store("control")"#,
             "if not acknowledged:",
             "control_kept = CONTROL in read",
             r#"session.call_tool("list_requests", {})"#,
             "asyncio.gather",
             "sys.exit(asyncio.run(main()))",
-            "if is_error(read_result):",
+            "if is_error(result):",
             "return 2",
         ] {
             assert!(script.contains(needle), "missing {needle}:\n{script}");
