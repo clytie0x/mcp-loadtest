@@ -17,6 +17,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -182,7 +183,14 @@ impl ReproRequest {
     /// Write `plan`'s script to [`Self::path`] and say how to run it.
     pub fn write(&self, plan: &ReproPlan) -> Result<()> {
         self.check(plan)?;
-        std::fs::write(&self.path, render(plan, self.sdk))
+        // `create_new`: a file that appeared at the path during the run, or a
+        // symlink, is refused rather than overwritten.
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&self.path)
+            .with_context(|| format!("creating repro script {}", self.path.display()))?;
+        file.write_all(render(plan, self.sdk).as_bytes())
             .with_context(|| format!("writing repro script {}", self.path.display()))?;
         eprintln!(
             "Repro script: {}\n  run it with `{}",
