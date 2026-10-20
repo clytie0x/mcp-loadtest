@@ -294,26 +294,17 @@ fn process_absent_now(pid: u32) -> bool {
     if system.process(pid).is_none() {
         return true;
     }
-    // Windows lists an exited process until every handle to it is closed,
-    // and a sibling session's descendant scan holds such handles for a
-    // moment. Ask whether it has exited instead. sysinfo's `wait` checks the
-    // exit code first and sleeps at least 10 ms before each later check, so
-    // only a return in under 10 ms is that first, immediate answer; a child
-    // that exits a little later must not pass.
-    if cfg!(windows) {
-        let (done, waited) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let started = std::time::Instant::now();
-            if let Some(process) = system.process(pid) {
-                process.wait();
-            }
-            let _ = done.send(started.elapsed());
-        });
-        return waited
-            .recv_timeout(Duration::from_secs(1))
-            .is_ok_and(|took| took < Duration::from_millis(10));
+    // Windows can still list a process for a moment after it has exited, so
+    // ask the OS for its exit state, without waiting. `Unknown` means it
+    // could not be opened.
+    #[cfg(windows)]
+    {
+        process_alive::state(process_alive::Pid::from(pid.as_u32())) != process_alive::State::Alive
     }
-    false
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 #[tokio::test]

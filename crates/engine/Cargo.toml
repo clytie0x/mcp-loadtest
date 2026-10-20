@@ -32,3 +32,6 @@ httpmock = "0.7"
 rand = { workspace = true }
 serde_json = { workspace = true }
 tokio-util = { workspace = true }
+
+[target.'cfg(windows)'.dev-dependencies]
+process_alive = "0.2"

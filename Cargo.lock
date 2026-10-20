@@ -1681,6 +1681,7 @@ dependencies = [
  "mcp-loadtest-auth",
  "mcp-loadtest-core",
  "mcp-loadtest-protocol",
+ "process_alive",
  "rand 0.9.4",
  "serde_json",
  "sysinfo",
@@ -2057,6 +2058,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "process_alive"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d882026f051f810bece627b431b5097f6c7aef71cfd1f2c35dd350085fe5157a"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
