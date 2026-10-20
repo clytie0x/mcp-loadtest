@@ -96,6 +96,11 @@ impl ReproRequest {
                 path.display()
             ),
         };
+        // The Node script is an ES module; any other extension can make
+        // `node` parse it as CommonJS.
+        if sdk == ReproSdk::Node && path.extension().and_then(|e| e.to_str()) != Some("mjs") {
+            bail!("a Node repro must end in .mjs, not {}", path.display());
+        }
         Ok(Self { path, sdk })
     }
 
@@ -207,6 +212,18 @@ impl ReproPlan {
         // revisions removed.
         if server.resolved_protocol_version().is_stateless() {
             bail!("--emit-repro needs a protocol revision with an initialize handshake");
+        }
+        // The SDKs advertise their own revision, so an older pin would not
+        // be what the script sends.
+        if let Some(pin) = server.protocol_version.as_deref()
+            && pin != "auto"
+            && pin != ProtocolVersion::DEFAULT_ADVERTISED.as_str()
+        {
+            bail!(
+                "--emit-repro cannot keep `protocol_version = \"{pin}\"`: the SDK scripts \
+                 negotiate their own revision; remove the pin or use \"{}\"",
+                ProtocolVersion::DEFAULT_ADVERTISED.as_str()
+            );
         }
         let command = match (&server.command, server.transport.as_str()) {
             (Some(command), "stdio") => command.clone(),
@@ -862,6 +879,12 @@ mod tests {
         assert!(infer("repro.js").is_err());
         assert_eq!(infer("repro.py").ok(), Some(ReproSdk::Python));
         assert!(infer("repro.txt").is_err());
+        let forced_node = |p: &str| ReproRequest::new(PathBuf::from(p), Some(ReproSdk::Node));
+        assert!(forced_node("repro.mjs").is_ok());
+        assert!(
+            forced_node("repro.js").is_err(),
+            "CommonJS under many package.json files"
+        );
         let forced = ReproRequest::new(PathBuf::from("repro.txt"), Some(ReproSdk::Python));
         assert_eq!(forced.map(|r| r.sdk).ok(), Some(ReproSdk::Python));
         assert_eq!("node".parse(), Ok(ReproSdk::Node));
@@ -901,18 +924,31 @@ mod tests {
         stateless.server.protocol_version = Some("2026-07-28".into());
         let err = ReproPlan::from_config(&stateless).unwrap_err();
         assert!(err.to_string().contains("initialize"), "{err}");
+
+        let mut pinned = stateless;
+        pinned.server.protocol_version = Some("2025-03-26".into());
+        let err = ReproPlan::from_config(&pinned).unwrap_err();
+        assert!(err.to_string().contains("2025-03-26"), "{err}");
+        for ok in ["auto", "2025-11-25"] {
+            pinned.server.protocol_version = Some(ok.into());
+            ReproPlan::from_config(&pinned).expect(ok);
+        }
     }
 
     #[test]
     fn node_refuses_integers_javascript_would_round() {
-        let request = |sdk| ReproRequest::new(PathBuf::from("repro"), Some(sdk)).unwrap();
+        let request = |sdk, path| ReproRequest::new(PathBuf::from(path), Some(sdk)).unwrap();
         let mut plan = plan();
         plan.read_args = json!({ "ids": [9_007_199_254_740_991_u64, -9_007_199_254_740_991_i64] });
-        request(ReproSdk::Node).check(&plan).expect("safe integers");
+        request(ReproSdk::Node, "repro.mjs")
+            .check(&plan)
+            .expect("safe integers");
         plan.read_args = json!({ "ids": [9_007_199_254_740_993_u64] });
-        let err = request(ReproSdk::Node).check(&plan).unwrap_err();
+        let err = request(ReproSdk::Node, "repro.mjs")
+            .check(&plan)
+            .unwrap_err();
         assert!(err.to_string().contains("9007199254740993"), "{err}");
-        request(ReproSdk::Python)
+        request(ReproSdk::Python, "repro.py")
             .check(&plan)
             .expect("Python keeps big integers");
     }

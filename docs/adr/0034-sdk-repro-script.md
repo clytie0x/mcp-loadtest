@@ -42,7 +42,10 @@ script from the run's own plan.
   on `@modelcontextprotocol/sdk` (`Client`, `StdioClientTransport`); `.py`
   produces a script on the `mcp` package (`ClientSession`,
   `StdioServerParameters`, `stdio_client`). `--repro-sdk node|python`
-  overrides the extension.
+  overrides the extension, but a Node script must still end in `.mjs`,
+  which `node` always runs as an ES module. The SDKs negotiate their own
+  protocol revision, so a config pinned to an older one is refused.
+  Calls time out after 60 s, the Node SDK's default.
 - **The same server and calls.** Command, args, env and working directory
   come from the run. The env is passed as `{ ...process.env, ... }` or
   `{**os.environ, ...}`, as the hand-written repros do, because the SDKs
