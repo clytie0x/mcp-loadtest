@@ -473,8 +473,9 @@ is an opt-in tool contract: a server that wants this coverage exposes two
 tools in its conformance build, for example `conformance_append` (takes a
 string `item` and stores it in shared state) and `conformance_read` (returns
 every stored item). The scenario sends N `conformance_append` calls, each
-with a unique marker, without waiting for responses, then calls
-`conformance_read` once, and checks that every write that returned a
+with a unique marker, sent together without waiting between them; after
+all of their responses have arrived, it calls `conformance_read` once, and
+checks that every write that returned a
 successful result is visible; writes that returned `isError` are allowed. It
 maps to the new MUST NOT. Servers that do not implement the contract skip
 the scenario. If maintainers prefer not to add a tool contract, the
