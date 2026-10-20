@@ -280,7 +280,7 @@ async fn process_exited(pid: u32) -> bool {
     }
 }
 
-/// One fresh process-table observation with no grace period. This distinguishes
+/// One fresh observation with no grace period. This distinguishes
 /// "shutdown proved reap before returning" from "shutdown requested a kill
 /// and the process happened to disappear shortly afterwards."
 fn process_absent_now(pid: u32) -> bool {
@@ -291,7 +291,24 @@ fn process_absent_now(pid: u32) -> bool {
         true,
         ProcessRefreshKind::new(),
     );
-    system.process(pid).is_none()
+    if system.process(pid).is_none() {
+        return true;
+    }
+    // Windows lists an exited process until every handle to it is closed,
+    // and a sibling session's descendant scan holds such handles for a
+    // moment. Ask whether it has exited: `wait` returns at once for an
+    // exited process and blocks while it runs.
+    if cfg!(windows) {
+        let (done, exited) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            if let Some(process) = system.process(pid) {
+                process.wait();
+            }
+            let _ = done.send(());
+        });
+        return exited.recv_timeout(Duration::from_millis(250)).is_ok();
+    }
+    false
 }
 
 #[tokio::test]
