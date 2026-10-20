@@ -123,6 +123,24 @@ impl ReproRequest {
         Ok(())
     }
 
+    /// Remove a script an earlier run left at [`Self::path`], so that after
+    /// this run a file there always stands for this run's finding.
+    pub fn clear_stale(&self) -> Result<()> {
+        match std::fs::remove_file(&self.path) {
+            Ok(()) => {
+                eprintln!(
+                    "Removed the earlier repro script at {}",
+                    self.path.display()
+                );
+                Ok(())
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e).with_context(|| {
+                format!("removing the earlier repro script {}", self.path.display())
+            }),
+        }
+    }
+
     /// Write `plan`'s script if `report` found lost updates on a session the
     /// script can open, and otherwise say why none was written.
     pub fn write_for(&self, plan: &ReproPlan, report: &Report) -> Result<()> {

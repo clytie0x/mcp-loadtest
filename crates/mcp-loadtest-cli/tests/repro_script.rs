@@ -79,7 +79,9 @@ async fn a_repro_is_written_only_when_writes_are_lost() {
     assert!(text.contains("MOCK_STORE_PATH"), "{text}");
     assert!(text.contains("const CALLS = 5;"), "{text}");
 
+    // A script left by an earlier failing run must not outlive a passing one.
     let script = dir.path().join("safe.py");
+    std::fs::write(&script, "# stale").expect("stale script");
     check(
         "safe --concurrent",
         &dir.path().join("safe"),

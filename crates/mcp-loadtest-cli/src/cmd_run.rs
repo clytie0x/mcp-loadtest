@@ -108,6 +108,7 @@ pub async fn run_from_config_with_repro(
         Some(request) => {
             let plan = ReproPlan::from_config(&config)?;
             request.check(&plan)?;
+            request.clear_stale()?;
             Some(plan)
         }
         None => None,

@@ -112,6 +112,7 @@ pub async fn run_lost_update(
                 concurrent,
             };
             request.check(&plan)?;
+            request.clear_stale()?;
             Some((request, plan))
         }
         None => None,
