@@ -59,9 +59,9 @@ Status: not met. Six server bugs are recorded in
 since been fixed upstream, and the owner chose not to report
 mcp-knowledge-graph. The other four are verified and drafted in
 [#36](https://github.com/clytie0x/mcp-loadtest/issues/36) but not filed yet.
-The lost-update class has a pinned regression test
-(`crates/engine/tests/taskmanager_regression.rs`), and the README links the
-findings.
+The lost-update class has pinned regression tests against real servers
+(`crates/engine/tests/taskmanager_regression.rs` and
+`filesystem_regression.rs`), and the README links the findings.
 
 ## Phase 3: Lower adoption friction
 
