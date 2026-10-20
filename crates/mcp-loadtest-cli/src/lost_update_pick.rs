@@ -569,6 +569,11 @@ fn number(obj: &Map<String, Value>, at: &str) -> Result<Value, String> {
     let bounds = Bounds::of(obj);
     let candidate = match (bounds.lower, bounds.upper) {
         (Some((lower, false)), _) => lower,
+        // Just above an exclusive lower bound: one more, or the midpoint
+        // when the interval is narrower than that.
+        (Some((lower, true)), Some((upper, _))) if lower + 1.0 >= upper => {
+            lower + (upper - lower) / 2.0
+        }
         (Some((lower, true)), _) => lower + 1.0,
         (None, Some((upper, false))) if upper < 0.0 => upper,
         (None, Some((upper, true))) if upper <= 0.0 => upper - 1.0,
@@ -783,6 +788,7 @@ mod tests {
                 "above": {"type": "integer", "exclusiveMinimum": 3},
                 "negative": {"type": "integer", "maximum": -2},
                 "ratio": {"type": "number", "exclusiveMinimum": 0.5, "maximum": 2},
+                "share": {"type": "number", "exclusiveMinimum": 0, "maximum": 0.5},
                 "page": {"type": "integer", "default": 7},
                 "flag": {"type": "boolean"},
                 "on": {"type": "boolean", "default": true},
@@ -793,7 +799,7 @@ mod tests {
                 "optional": {"type": "string"}
             },
             "required": ["text", "kind", "version", "count", "even", "below", "above",
-                         "negative", "ratio",
+                         "negative", "ratio", "share",
                          "page", "flag", "on", "nothing", "tags", "meta", "entry"],
             "$defs": {"entry": {"properties": {"id": {"type": "string"}}, "required": ["id"]}}
         });
@@ -802,7 +808,7 @@ mod tests {
             Ok(json!({
                 "text": "{marker}", "kind": "note", "version": 2, "count": 1, "even": 2,
                 "below": -4, "above": 4,
-                "negative": -2, "ratio": 1.5, "page": 7, "flag": false, "on": true,
+                "negative": -2, "ratio": 1.5, "share": 0.25, "page": 7, "flag": false, "on": true,
                 "nothing": null, "tags": [], "meta": {}, "entry": {"id": "{marker}"}
             }))
         );
