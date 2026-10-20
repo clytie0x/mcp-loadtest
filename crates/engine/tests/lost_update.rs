@@ -23,6 +23,11 @@
 //! a racy store loses them inside one process; without it, the fixture
 //! handles requests one at a time and nothing is lost. `stalling` never
 //! answers odd-numbered writes, so the check must stop at that round.
+//!
+//! With `recheck_losses` (ADR 0035), a loss counts only once sequential
+//! writes and a second read confirm it. A racy store still fails; `last`,
+//! and a read capped by `--read-limit`, become inconclusive, because the
+//! read cannot show writes made one at a time either.
 
 mod helpers;
 
@@ -75,6 +80,47 @@ async fn run_store_with(
     pipelined: bool,
     toml_tail: &str,
 ) -> Report {
+    run_store_plan(
+        mode,
+        extra,
+        concurrent,
+        writes_per_worker,
+        pipelined,
+        toml_tail,
+        false,
+    )
+    .await
+}
+
+/// [`run_store_with`] with `recheck_losses` on and no config tail.
+async fn run_store_rechecked(
+    mode: &str,
+    extra: &[&str],
+    concurrent: u32,
+    writes_per_worker: u32,
+    pipelined: bool,
+) -> Report {
+    run_store_plan(
+        mode,
+        extra,
+        concurrent,
+        writes_per_worker,
+        pipelined,
+        "",
+        true,
+    )
+    .await
+}
+
+async fn run_store_plan(
+    mode: &str,
+    extra: &[&str],
+    concurrent: u32,
+    writes_per_worker: u32,
+    pipelined: bool,
+    toml_tail: &str,
+    recheck_losses: bool,
+) -> Report {
     let scratch = ScratchDir::new(mode);
     let store = scratch.0.join("store");
     let mock = helpers::fixture_path("mock-store.py");
@@ -104,6 +150,7 @@ async fn run_store_with(
         read_tool: "read".to_owned(),
         read_args: json!({}),
         pipelined,
+        recheck_losses,
     });
     tokio::time::timeout(
         TEST_TIMEOUT,
@@ -301,4 +348,82 @@ async fn pipelined_writes_left_unanswered_stop_the_check() {
         "{:?}",
         outcome.notes
     );
+}
+
+#[tokio::test]
+async fn a_rechecked_loss_on_a_racy_store_still_fails() {
+    let report = run_store_rechecked("racy", &["--concurrent"], 5, 3, true).await;
+    let outcome = &report.scenario_outcome;
+    assert!(outcome.lost_update_count > 0, "{outcome:?}");
+    assert_eq!(outcome.error_count, 0, "{outcome:?}");
+    assert!(!report.passed(), "{outcome:?}");
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.starts_with("lost_update: confirmed by a recheck")),
+        "{:?}",
+        outcome.notes
+    );
+    // Control write and read, 15 writes, final read, 3 recheck writes and
+    // the recheck read.
+    assert_eq!(outcome.total_calls, 22, "{outcome:?}");
+}
+
+#[tokio::test]
+async fn a_capped_read_is_inconclusive_when_rechecked_not_lost_updates() {
+    // A safe store whose read shows only its first 3 items: without the
+    // recheck, 10 of 12 writes would read as lost.
+    let unchecked = run_store_with("safe", &["--read-limit", "3"], 4, 3, true, "").await;
+    assert!(
+        unchecked.scenario_outcome.lost_update_count > 0,
+        "{:?}",
+        unchecked.scenario_outcome
+    );
+
+    let report = run_store_rechecked("safe", &["--read-limit", "3"], 4, 3, true).await;
+    let outcome = &report.scenario_outcome;
+    assert_eq!(outcome.lost_update_count, 0, "{outcome:?}");
+    assert!(outcome.error_count > 0, "{outcome:?}");
+    assert!(!report.passed(), "inconclusive is not a pass: {outcome:?}");
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.starts_with("lost_update inconclusive:")
+                && n.contains("could not confirm the loss")
+                && n.contains("lacked 3 of them")),
+        "{:?}",
+        outcome.notes
+    );
+    assert!(
+        !outcome.notes.iter().any(|n| n.starts_with("lost update")),
+        "an unconfirmed loss is not described as one: {:?}",
+        outcome.notes
+    );
+}
+
+#[tokio::test]
+async fn a_store_that_keeps_only_the_last_write_is_inconclusive_when_rechecked() {
+    let report = run_store_rechecked("last", &[], 4, 3, false).await;
+    let outcome = &report.scenario_outcome;
+    assert_eq!(outcome.lost_update_count, 0, "{outcome:?}");
+    assert!(!report.passed(), "{outcome:?}");
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.contains("could not confirm the loss")),
+        "{:?}",
+        outcome.notes
+    );
+}
+
+#[tokio::test]
+async fn a_rechecked_safe_store_passes_without_extra_calls() {
+    let report = run_store_rechecked("safe", &[], 4, 3, false).await;
+    let outcome = &report.scenario_outcome;
+    assert!(report.passed(), "{outcome:?}");
+    // Nothing to confirm: control write and read, 12 writes, final read.
+    assert_eq!(outcome.total_calls, 15, "{outcome:?}");
 }

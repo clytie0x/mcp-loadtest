@@ -103,6 +103,7 @@ async fn run_filesystem(
         read_tool: "read_text_file".to_owned(),
         read_args: json!({ "path": path }),
         pipelined,
+        recheck_losses: false,
     });
     tokio::time::timeout(
         TEST_TIMEOUT,

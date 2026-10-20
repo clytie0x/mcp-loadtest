@@ -26,6 +26,12 @@
 //! Because step 1 already proved that state is shared, a final read that
 //! shows none of the acknowledged markers (for example, a store corrupted by
 //! interleaved writes) counts every one of them as lost.
+//!
+//! With `recheck_losses` (set when the CLI picked the read tool, ADR 0035),
+//! a loss is confirmed before it counts: a few more writes, one at a time,
+//! and a second read must show them and everything the first read showed.
+//! A read that caps, pages or sorts its output fails that and leaves the
+//! check inconclusive instead of reporting writes it merely did not list.
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -45,6 +51,10 @@ use mcp_loadtest_protocol::mcp::{CallToolResult, Content};
 /// Placeholder replaced by a run-unique, fixed-width marker per write.
 pub const MARKER_PLACEHOLDER: &str = "{marker}";
 
+/// Length of every marker substituted for [`MARKER_PLACEHOLDER`], for
+/// callers that check a string field can hold one.
+pub const MARKER_LEN: usize = 22;
+
 /// Concurrent uniquely-marked writes, then one read that must contain them.
 pub struct LostUpdate {
     /// Independent sessions writing at once. Must be at least 2.
@@ -62,7 +72,15 @@ pub struct LostUpdate {
     /// Send each round's writes pipelined on the run session instead of
     /// from `concurrent` separate sessions (ADR 0033).
     pub pipelined: bool,
+    /// Confirm missing markers with sequential writes and a second read
+    /// before counting them as lost (ADR 0035). For a read tool nobody
+    /// vouched for: one that does not list everything is then reported as
+    /// inconclusive instead of as lost updates.
+    pub recheck_losses: bool,
 }
+
+/// Sequential writes a recheck makes before its second read.
+const RECHECK_WRITES: u32 = 3;
 
 #[async_trait]
 impl Scenario for LostUpdate {
@@ -154,13 +172,13 @@ impl Scenario for LostUpdate {
         let write_tool = Arc::new(self.write_tool.clone());
         let write_args = Arc::new(self.write_args.clone());
         let writes = self.writes_per_worker;
-        let nonce = Arc::new(nonce);
+        let shared_nonce = Arc::new(nonce.clone());
         let pooled = pool::drive_pooled(ctx, self.concurrent, move |worker, mut session, wctx| {
             let acknowledged = Arc::clone(&shared);
             let first_refusal = Arc::clone(&shared_refusal);
             let write_tool = Arc::clone(&write_tool);
             let write_args = Arc::clone(&write_args);
-            let nonce = Arc::clone(&nonce);
+            let nonce = Arc::clone(&shared_nonce);
             async move {
                 let mut out = ScenarioOutcome::default();
                 for seq in 0..writes {
@@ -214,7 +232,7 @@ impl Scenario for LostUpdate {
                 return outcome;
             }
         };
-        self.verify(session, ctx, outcome, &acknowledged, &control)
+        self.verify(session, ctx, outcome, &acknowledged, &control, &nonce)
             .await
     }
 
@@ -413,7 +431,7 @@ impl LostUpdate {
         self.note_refusals(&mut outcome, first_refusal);
 
         // 3. One read; every acknowledged marker must be in it.
-        self.verify(session, ctx, outcome, &acknowledged, &control)
+        self.verify(session, ctx, outcome, &acknowledged, &control, &nonce)
             .await
     }
 
@@ -426,6 +444,7 @@ impl LostUpdate {
         mut outcome: ScenarioOutcome,
         acknowledged: &[String],
         control: &str,
+        nonce: &str,
     ) -> ScenarioOutcome {
         if acknowledged.is_empty() {
             outcome.error_count += 1;
@@ -455,8 +474,9 @@ impl LostUpdate {
         // already held (for example, a writer that read a truncated file).
         let control_lost = !contains(&read, control);
         outcome.lost_update_count = missing.len() as u64 + u64::from(control_lost);
+        let mut loss_notes = Vec::new();
         if control_lost {
-            outcome.notes.push(format!(
+            loss_notes.push(format!(
                 "lost update: the control write `{control}`, read back before the concurrent \
                  writes began, is missing from `{}`; the store dropped data it already held",
                 self.read_tool
@@ -464,7 +484,7 @@ impl LostUpdate {
         }
         if !missing.is_empty() {
             let preview: Vec<&str> = missing.iter().take(5).map(|m| m.as_str()).collect();
-            outcome.notes.push(format!(
+            loss_notes.push(format!(
                 "lost updates: {} of {} acknowledged writes to `{}` are missing from `{}` \
                  (first: {})",
                 missing.len(),
@@ -472,6 +492,116 @@ impl LostUpdate {
                 self.write_tool,
                 self.read_tool,
                 preview.join(", ")
+            ));
+        }
+        if self.recheck_losses && outcome.lost_update_count > 0 {
+            let shown: Vec<&str> = acknowledged
+                .iter()
+                .map(String::as_str)
+                .chain(std::iter::once(control))
+                .filter(|mark| contains(&read, mark))
+                .collect();
+            let mut missing: Vec<&str> = missing.iter().map(|m| m.as_str()).collect();
+            if control_lost {
+                missing.push(control);
+            }
+            return self
+                .recheck(session, ctx, outcome, loss_notes, &shown, &missing, nonce)
+                .await;
+        }
+        outcome.notes.extend(loss_notes);
+        outcome
+    }
+
+    /// Confirm a loss before it counts (ADR 0035): write [`RECHECK_WRITES`]
+    /// markers one at a time, then read again. The second read must show
+    /// every one of them, every marker the first read showed (`shown`), and
+    /// still none of the `missing` ones. Otherwise the read is not a
+    /// complete listing (it caps, pages or sorts its output) or not a
+    /// stable one, and the check is inconclusive rather than failed.
+    /// `loss_notes` describe the loss and are kept only when it is
+    /// confirmed.
+    #[allow(clippy::too_many_arguments)] // the loss as `verify` found it
+    async fn recheck(
+        &self,
+        session: &mut Session,
+        ctx: &RunContext,
+        mut outcome: ScenarioOutcome,
+        loss_notes: Vec<String>,
+        shown: &[&str],
+        missing: &[&str],
+        nonce: &str,
+    ) -> ScenarioOutcome {
+        let lost = outcome.lost_update_count;
+        let unconfirmed = |outcome: &mut ScenarioOutcome, why: String| {
+            outcome.lost_update_count = 0;
+            outcome.error_count += 1;
+            outcome.notes.push(format!(
+                "lost_update inconclusive: {lost} acknowledged write{} did not show in `{}`, \
+                 but a recheck could not confirm the loss: {why}. Name a read tool that \
+                 returns everything stored with --read-tool",
+                if lost == 1 { "" } else { "s" },
+                self.read_tool
+            ));
+        };
+
+        let mut written = Vec::new();
+        for seq in 0..RECHECK_WRITES {
+            let mark = marker(nonce, "r", seq);
+            let args = render(&self.write_args, "recheck", seq, &mark);
+            let label = format!("recheck write {seq}");
+            if call_strict(session, &self.write_tool, &args, ctx, &mut outcome, &label)
+                .await
+                .is_none()
+            {
+                unconfirmed(&mut outcome, format!("`{}` failed", self.write_tool));
+                return outcome;
+            }
+            written.push(mark);
+        }
+        let Some(read) = call_strict(
+            session,
+            &self.read_tool,
+            &self.read_args,
+            ctx,
+            &mut outcome,
+            "recheck read",
+        )
+        .await
+        else {
+            unconfirmed(&mut outcome, "the second read failed".to_owned());
+            return outcome;
+        };
+
+        let unlisted = written.iter().filter(|mark| !contains(&read, mark)).count();
+        let dropped = shown.iter().filter(|mark| !contains(&read, mark)).count();
+        let reappeared = missing.iter().filter(|mark| contains(&read, mark)).count();
+        if unlisted > 0 || dropped > 0 {
+            unconfirmed(
+                &mut outcome,
+                format!(
+                    "after {RECHECK_WRITES} more writes made one at a time, the second read \
+                     lacked {unlisted} of them and {dropped} marker{} the first read showed, \
+                     so the read does not list everything stored (it may cap, page or sort \
+                     its output)",
+                    if dropped == 1 { "" } else { "s" }
+                ),
+            );
+        } else if reappeared > 0 {
+            unconfirmed(
+                &mut outcome,
+                format!(
+                    "{reappeared} of the missing markers appeared in a second read, so the \
+                     read does not yet show every acknowledged write when it answers"
+                ),
+            );
+        } else {
+            outcome.notes.extend(loss_notes);
+            outcome.notes.push(format!(
+                "lost_update: confirmed by a recheck: after {RECHECK_WRITES} more writes made \
+                 one at a time, `{}` showed all of them and everything it showed before, and \
+                 still lacks the missing markers",
+                self.read_tool
             ));
         }
         outcome
@@ -739,6 +869,8 @@ mod tests {
         let short = marker("abcd1234", "1", 1);
         let long = marker("abcd1234", "1", 10);
         assert_eq!(short.len(), long.len());
+        assert_eq!(short.len(), MARKER_LEN);
+        assert_eq!(marker("abcd1234", "r", 2).len(), MARKER_LEN);
         assert!(!long.contains(&short) && !short.contains(&long));
     }
 
@@ -752,6 +884,7 @@ mod tests {
             read_tool: "read".into(),
             read_args: json!({}),
             pipelined: false,
+            recheck_losses: false,
         };
         assert_eq!(plan.validation_error(), None);
         plan.write_args = json!({ "item": "fixed" });

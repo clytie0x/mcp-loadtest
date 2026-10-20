@@ -83,6 +83,7 @@ pub async fn run_lost_update(
         read_tool: read_tool.to_owned(),
         read_args: parse_json_object("--read-args", read_args, target.redact_server_identity)?,
         pipelined,
+        recheck_losses: false,
     };
     if let Some(message) = scenario.validation_error() {
         anyhow::bail!("invalid lost-update plan: {message}");

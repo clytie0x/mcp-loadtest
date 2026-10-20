@@ -102,6 +102,7 @@ async fn run_taskmanager(
         read_tool: "list_requests".to_owned(),
         read_args: json!({}),
         pipelined,
+        recheck_losses: false,
     });
     tokio::time::timeout(
         TEST_TIMEOUT,
