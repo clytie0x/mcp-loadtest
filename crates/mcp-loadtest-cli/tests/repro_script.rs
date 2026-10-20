@@ -36,6 +36,7 @@ fn store_target(mode: &str, store: &Path) -> DetectTarget {
         env: vec![format!("MOCK_STORE_PATH={}", store.display())],
         // Cold Python starts on a loaded Windows runner can exceed 10 s.
         startup_timeout: Duration::from_secs(60),
+        redact_server_identity: false,
     }
 }
 
