@@ -77,6 +77,9 @@ jobs:
               with:
                   version: v0.6.0
                   command: run
+                  # Required by the Action's inputs; `run` takes the server
+                  # from the config.
+                  server: "npx -y @modelcontextprotocol/server-memory@2.0.0"
                   args: '["--config","ci/lost-update.toml"]'
 ```
 
