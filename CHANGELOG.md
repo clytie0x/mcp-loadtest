@@ -27,6 +27,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finds lost updates. See ADR 0034 and
   [docs/examples/lost-update.md](docs/examples/lost-update.md#a-repro-for-the-upstream-report). Not available in the
   Action, which keeps the server command out of every output.
+
+- `lost-update` without `--write-tool`, `--write-args` or `--read-tool`
+  lists the server's tools and fills in what is missing. It picks a write
+  the server marks not read-only, `destructiveHint: false` and
+  `openWorldHint: false`, builds its arguments from the input schema with
+  `{marker}` in every required string, and picks a read-only tool that takes
+  no arguments. Each choice is printed; if nothing qualifies, it lists the
+  tools and why each does not qualify. A named `--write-tool` without
+  `--write-args` also gets its arguments built. A loss seen through a picked
+  read is confirmed by 3 more writes made one at a time and a second read;
+  a read that cannot show them (a page or a capped listing) leaves the check
+  incomplete instead of failing it for lost updates. See
+  [ADR 0035](docs/adr/0035-lost-update-picks-tools.md).
+
 - `crates/engine/tests/taskmanager_regression.rs`: an ignored regression test
   that runs `lost_update` against `@kazuph/mcp-taskmanager` 1.1.1, pinned on
   npm, in pipelined and multi-process modes and expects lost updates.

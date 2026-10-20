@@ -13,7 +13,9 @@ file. Both results are recorded in
 
 - **A write tool whose arguments can carry a unique string.** Put `{marker}`
   in a string value of `write_args`. Each call gets a run-unique marker, and
-  `{worker}` and `{seq}` are substituted too.
+  `{worker}` and `{seq}` are substituted too. The `lost-update` subcommand
+  can also choose the tools and build the arguments itself (see
+  [Letting it choose the tools](#letting-it-choose-the-tools)).
 - **A read tool that returns what was stored.** Every acknowledged marker
   must appear in its result.
 - **Sessions that share state.** For stdio, each session is its own server
@@ -76,6 +78,69 @@ mcp-loadtest lost-update \
   --write-args '{"entities":[{"name":"{marker}","entityType":"probe","observations":["w{worker}s{seq}"]}]}' \
   --read-tool read_graph --concurrent 8 --writes-per-worker 5
 ```
+
+## Letting it choose the tools
+
+`--write-tool`, `--write-args` and `--read-tool` are optional. Leave them
+out and the check lists the server's tools and chooses from the server's own
+annotations ([ADR 0035](../adr/0035-lost-update-picks-tools.md)):
+
+```bash
+mcp-loadtest lost-update --pipelined \
+  --server "npx -y @modelcontextprotocol/server-memory@2026.8.31" \
+  --env MEMORY_FILE_PATH=/tmp/lost-update-probe.jsonl --startup-timeout 60s
+```
+
+```text
+no --write-tool given; writing with `create_entities` (the server marks it not read-only, not destructive and closed-world) and arguments built from its input schema: {"entities":[{"entityType":"{marker}","name":"{marker}","observations":["{marker}"]}]}. These are the server's own hints; pass --write-tool to choose.
+no --read-tool given; reading with `read_graph` (the server marks it read-only and it takes no arguments). Before a loss fails the run, it is confirmed by a second read; pass --read-tool to choose.
+Writes are real: point the server at a disposable store.
+  status:    FAIL (45 lost updates)
+  note:      lost updates: 45 of 50 acknowledged writes to `create_entities` are missing from `read_graph` (first: …)
+  note:      lost_update: confirmed by a recheck: after 3 more writes made one at a time, `read_graph` showed all of them and everything it showed before, and still lacks the missing markers
+```
+
+The same command against `@modelcontextprotocol/server-memory@2.0.0` picks
+the same tools and passes.
+
+- **Write tool:** the first tool the server marks not read-only, with
+  `destructiveHint: false` and `openWorldHint: false` both set (MCP treats a
+  missing one as `true`), whose arguments can be built. Names that start
+  like a creation (`create_`, `add_`, `append`, ...) come first.
+- **Write arguments:** built from the tool's input schema. Every required
+  string gets `{marker}`, every other required property its smallest valid
+  value, and an array one element. A schema it cannot fill with confidence
+  (`anyOf`, a string `format` or `pattern`, an array that needs two items)
+  is refused with the property's name.
+- **Read tool:** the first tool the server marks read-only, not destructive,
+  that takes no arguments at all. A read with an optional `limit` or `page`
+  is skipped. Names that start like a listing (`read_`, `list_`, ...) come
+  first.
+- **Recheck:** a read nobody named might list only part of the store. When
+  writes are missing from it, the check makes 3 more writes one at a time
+  and reads again. The loss counts only if that read shows the new writes
+  and everything it showed before. Otherwise the run is reported as
+  incomplete, with a note to name the read tool.
+
+Flags you pass are used as given; only the missing parts are chosen. A
+server that annotates nothing, such as `@kazuph/mcp-taskmanager` 1.1.1, gets
+the list of its tools and why each does not qualify. Naming the two tools is
+then enough, and the write arguments are still built:
+
+```bash
+mcp-loadtest lost-update --pipelined \
+  --server "npx -y @kazuph/mcp-taskmanager@1.1.1" \
+  --env TASK_MANAGER_FILE_PATH=/tmp/lost-update-tasks.json --startup-timeout 60s \
+  --write-tool request_planning --read-tool list_requests
+```
+
+```text
+no --write-args given; writing to `request_planning` with arguments built from its input schema: {"originalRequest":"{marker}","tasks":[{"description":"{marker}","title":"{marker}"}]}
+Writes are real: point the server at a disposable store.
+  status:    FAIL (45 lost updates)
+```
+
+`--write-args` needs `--write-tool`, and `--read-args` needs `--read-tool`.
 
 ## One process: `--pipelined`
 
@@ -154,7 +219,7 @@ maintainers can use.
 | Outcome | Meaning |
 |---|---|
 | `FAIL (N lost updates)` | N acknowledged writes are missing from the read. The notes list the first few markers, which name the worker and sequence of each lost write. |
-| `incomplete lost-update check` | The control step failed (the read did not show a write made on another session, or the control write or a read returned an error), no concurrent write was acknowledged, or a write hung or lost its connection. Check that the read tool returns stored data and that the sessions share a store. |
+| `incomplete lost-update check` | The control step failed (the read did not show a write made on another session, or the control write or a read returned an error), no concurrent write was acknowledged, or a write hung or lost its connection. Check that the read tool returns stored data and that the sessions share a store. With a read the check picked, it also means the recheck could not confirm a loss: name a read tool that returns everything with `--read-tool`. |
 | `refused N concurrent writes` (note) | The server refused N writes with `isError`, for example a conflict check. They were never acknowledged, so they are not expected in the read and do not fail the run. The note quotes the first refusal. |
 | `PASS` | Every acknowledged write was read back. A race that needs a narrower window may still exist; raise `concurrent` and `writes_per_worker` to widen it. |
 
