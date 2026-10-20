@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `crates/engine/tests/taskmanager_regression.rs`: an ignored regression test
+  that runs `lost_update` against `@kazuph/mcp-taskmanager` 1.1.1, pinned on
+  npm, in pipelined and multi-process modes and expects lost updates.
+- The README lists the servers `lost-update` has found losing writes.
+
 ## [0.6.0] — Release contents
 
 This section describes the source contents intended for `v0.6.0`. Its presence
