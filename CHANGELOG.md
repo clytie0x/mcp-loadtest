@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that runs `lost_update` against `@kazuph/mcp-taskmanager` 1.1.1, pinned on
   npm, in pipelined and multi-process modes and expects lost updates.
 - The README lists the servers `lost-update` has found losing writes.
+- `docs/examples/ci-gate.md`: adding `deadlock-probe` and `lost_update` to a
+  server's pull-request workflow through the Action.
 
 ## [0.6.0] — Release contents
 

@@ -94,7 +94,8 @@ will keep the gate in their CI.
   after the fix lands.
 - Write `docs/examples/ci-gate.md`: one page that adds `lost-update` and
   `deadlock-probe` to a server's workflow, with the write and read tools
-  for a typical file-backed server and the expected PASS output.
+  for a typical file-backed server and the expected PASS output. Done
+  2026-10-20; the Action runs `lost_update` through `command: run`.
 - Change a detector only when a maintainer reports a false positive, a
   missed bug, or a message they could not act on. Each such report is an
   issue here, with a regression test before the fix.
