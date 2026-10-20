@@ -27,8 +27,9 @@ script from the run's own plan.
 
 - **Pipelined only.** `lost-update --emit-repro` requires `--pipelined`, and
   `run --emit-repro` requires a `lost_update` config with `pipelined = true`
-  against a stdio `command`. Anything else is refused before the run
-  starts. A script for the multi-process case would have to start and
+  against a stdio `command` on a revision with an `initialize` handshake.
+  Anything else is refused before the run starts, as is a Node script for
+  arguments holding an integer JavaScript would round. A script for the multi-process case would have to start and
   coordinate several clients, and would no longer look like the minimal
   repro maintainers expect.
 - **Written only for a finding.** The script is written when the run
@@ -50,6 +51,9 @@ script from the run's own plan.
 - **A verdict, not a dump.** The script counts each write as acknowledged,
   refused (`isError`) or failed, as the engine does, prints how many
   acknowledged markers the read shows, and exits 1 if any is missing.
+  Anything that leaves the check without evidence (the server does not
+  start, the control write or a read fails, no write is acknowledged)
+  prints `INCONCLUSIVE` and exits 2, so exit 1 always means a loss.
 - **Values are embedded as literals, never interpolated.** Every string
   from the plan becomes a double-quoted literal that is valid in both
   JavaScript and Python and is printable ASCII: quotes and backslashes are

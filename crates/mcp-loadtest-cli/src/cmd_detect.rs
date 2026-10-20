@@ -111,6 +111,7 @@ pub async fn run_lost_update(
                 read_args: scenario.read_args.clone(),
                 concurrent,
             };
+            request.check(&plan)?;
             Some((request, plan))
         }
         None => None,

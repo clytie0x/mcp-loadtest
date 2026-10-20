@@ -104,7 +104,14 @@ pub async fn run_from_config_with_repro(
     if repro.is_some() && redact_server_identity {
         anyhow::bail!("--emit-repro is not available in Action mode");
     }
-    let repro_plan = repro.map(|_| ReproPlan::from_config(&config)).transpose()?;
+    let repro_plan = match repro {
+        Some(request) => {
+            let plan = ReproPlan::from_config(&config)?;
+            request.check(&plan)?;
+            Some(plan)
+        }
+        None => None,
+    };
     let output_dir = config.output.report_dir.clone();
     let formats = config.output.formats.clone();
 

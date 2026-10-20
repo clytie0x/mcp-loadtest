@@ -97,8 +97,28 @@ impl ReproRequest {
         Ok(Self { path, sdk })
     }
 
+    /// Refuse a plan the target SDK cannot send unchanged. Call it before the
+    /// run, so a refusal does not cost one.
+    pub fn check(&self, plan: &ReproPlan) -> Result<()> {
+        if self.sdk == ReproSdk::Node {
+            for (flag, value) in [
+                ("write_args", &plan.write_args),
+                ("read_args", &plan.read_args),
+            ] {
+                if let Some(n) = unsafe_js_integer(value) {
+                    bail!(
+                        "{flag} holds {n}, which JavaScript rounds; \
+                         emit a Python repro (.py) instead"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Write `plan`'s script to [`Self::path`] and say how to run it.
     pub fn write(&self, plan: &ReproPlan) -> Result<()> {
+        self.check(plan)?;
         std::fs::write(&self.path, render(plan, self.sdk))
             .with_context(|| format!("writing repro script {}", self.path.display()))?;
         eprintln!(
@@ -153,6 +173,11 @@ impl ReproPlan {
             );
         }
         let server = &config.server;
+        // The scripts open a session with `initialize`, which the stateless
+        // revisions removed.
+        if server.resolved_protocol_version().is_stateless() {
+            bail!("--emit-repro needs a protocol revision with an initialize handshake");
+        }
         let command = match (&server.command, server.transport.as_str()) {
             (Some(command), "stdio") => command.clone(),
             _ => bail!("--emit-repro needs a stdio server with a `command`"),
@@ -243,7 +268,7 @@ fn render_node(plan: &ReproPlan) -> String {
     }
     env.push_str(" }");
     let cwd = match &plan.working_dir {
-        Some(dir) => format!("  cwd: {},\n", str_lit(&dir.to_string_lossy(), sdk)),
+        Some(dir) => format!("  cwd: {},\n  ", str_lit(&dir.to_string_lossy(), sdk)),
         None => String::new(),
     };
     let mut out = header(
@@ -269,11 +294,15 @@ const inconclusive = (why) => {{
 }};
 
 const client = new Client({{ name: "mcp-loadtest-repro", version: "1" }});
-await client.connect(new StdioClientTransport({{
-  command: {command},
-  args: {args},
-  env: {env},
-{cwd}}}));
+try {{
+  await client.connect(new StdioClientTransport({{
+    command: {command},
+    args: {args},
+    env: {env},
+  {cwd}}}));
+}} catch (e) {{
+  inconclusive(`the server did not start (${{e}}), so nothing can be concluded about lost writes`);
+}}
 
 // `w` is the worker ({{worker}}), `m` the marker.
 const write = (w, m) => client.callTool({{ name: {write_tool}, arguments: {write_args} }});
@@ -315,7 +344,7 @@ if (acknowledged.length === 0) {{
 
 console.log(`calls: ${{CALLS}} sent, ${{acknowledged.length}} succeeded, ${{refused}} isError, ${{failed}} failed`);
 const read = await readStore("final");
-await client.close();
+await client.close().catch(() => {{}});
 const kept = acknowledged.filter((m) => read.includes(m));
 const controlKept = read.includes(CONTROL);
 console.log(`read: ${{kept.length}} of ${{acknowledged.length}} acknowledged writes are in the result; control write ${{controlKept ? "kept" : "missing"}}`);
@@ -464,7 +493,17 @@ async def main():
     return 0
 
 
-sys.exit(asyncio.run(main()))
+async def run():
+    try:
+        return await main()
+    except Exception as e:  # noqa: BLE001
+        # A server that does not start, or a session that breaks outside a
+        # tool call, says nothing about lost writes.
+        print(f"INCONCLUSIVE: the session failed ({{e!r}}), so nothing can be concluded about lost writes")
+        return 2
+
+
+sys.exit(asyncio.run(run()))
 "#,
         calls = plan.concurrent,
         command = str_lit(&plan.command, sdk),
@@ -549,6 +588,22 @@ fn expr(value: &Value, sdk: ReproSdk, substitute: bool) -> String {
                 ReproSdk::Python => format!("{{{}}}", fields.join(", ")),
             }
         }
+    }
+}
+
+/// The first integer in `value` outside JavaScript's safe range, which a
+/// Node script would round before sending.
+fn unsafe_js_integer(value: &Value) -> Option<String> {
+    const MAX_SAFE: u64 = (1 << 53) - 1;
+    match value {
+        Value::Number(n) => {
+            let unsafe_int = n.as_u64().is_some_and(|u| u > MAX_SAFE)
+                || n.as_i64().is_some_and(|i| i.unsigned_abs() > MAX_SAFE);
+            unsafe_int.then(|| n.to_string())
+        }
+        Value::Array(items) => items.iter().find_map(unsafe_js_integer),
+        Value::Object(map) => map.values().find_map(unsafe_js_integer),
+        _ => None,
     }
 }
 
@@ -736,7 +791,7 @@ mod tests {
             "control_kept = CONTROL in read",
             r#"session.call_tool("list_requests", {})"#,
             "asyncio.gather",
-            "sys.exit(asyncio.run(main()))",
+            "sys.exit(asyncio.run(run()))",
             "if is_error(result):",
             "return 2",
         ] {
@@ -810,6 +865,34 @@ mod tests {
         unpipelined["pipelined"] = json!(false);
         let err = ReproPlan::from_config(&config("lost_update", unpipelined)).unwrap_err();
         assert!(err.to_string().contains("pipelined"), "{err}");
-        assert!(ReproPlan::from_config(&config("race_check", params)).is_err());
+        assert!(ReproPlan::from_config(&config("race_check", params.clone())).is_err());
+
+        let mut stateless = config("lost_update", params);
+        stateless.server.protocol_version = Some("2026-07-28".into());
+        let err = ReproPlan::from_config(&stateless).unwrap_err();
+        assert!(err.to_string().contains("initialize"), "{err}");
+    }
+
+    #[test]
+    fn node_refuses_integers_javascript_would_round() {
+        let request = |sdk| ReproRequest::new(PathBuf::from("repro"), Some(sdk)).unwrap();
+        let mut plan = plan();
+        plan.read_args = json!({ "ids": [9_007_199_254_740_991_u64, -9_007_199_254_740_991_i64] });
+        request(ReproSdk::Node).check(&plan).expect("safe integers");
+        plan.read_args = json!({ "ids": [9_007_199_254_740_993_u64] });
+        let err = request(ReproSdk::Node).check(&plan).unwrap_err();
+        assert!(err.to_string().contains("9007199254740993"), "{err}");
+        request(ReproSdk::Python)
+            .check(&plan)
+            .expect("Python keeps big integers");
+    }
+
+    #[test]
+    fn startup_failures_are_inconclusive() {
+        let node = render(&plan(), ReproSdk::Node);
+        assert!(node.contains("the server did not start"), "{node}");
+        let python = render(&plan(), ReproSdk::Python);
+        assert!(python.contains("the session failed"), "{python}");
+        assert!(python.contains("sys.exit(asyncio.run(run()))"), "{python}");
     }
 }
