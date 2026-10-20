@@ -295,11 +295,22 @@ fn process_absent_now(pid: u32) -> bool {
         return true;
     }
     // Windows can still list a process for a moment after it has exited, so
-    // ask the OS for its exit state, without waiting. `Unknown` means it
-    // could not be opened.
+    // ask the OS for its exit state, without waiting. A query that fails
+    // proves nothing unless the PID has also left the list by then.
     #[cfg(windows)]
     {
-        process_alive::state(process_alive::Pid::from(pid.as_u32())) != process_alive::State::Alive
+        match process_alive::state(process_alive::Pid::from(pid.as_u32())) {
+            process_alive::State::Dead => true,
+            process_alive::State::Alive => false,
+            process_alive::State::Unknown => {
+                system.refresh_processes_specifics(
+                    ProcessesToUpdate::Some(&[pid]),
+                    true,
+                    ProcessRefreshKind::new(),
+                );
+                system.process(pid).is_none()
+            }
+        }
     }
     #[cfg(not(windows))]
     {
