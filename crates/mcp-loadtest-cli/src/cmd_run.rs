@@ -134,14 +134,7 @@ pub async fn run_from_config_with_repro(
 
     emit_reports(&report, &formats, &output_dir)?;
     if let (Some(request), Some(plan)) = (repro, &repro_plan) {
-        if report.scenario_outcome.lost_update_count > 0 {
-            request.write(plan)?;
-        } else {
-            eprintln!(
-                "No lost update found, so no repro script was written to {}",
-                request.path.display()
-            );
-        }
+        request.write_for(plan, &report)?;
     }
     if !report.passed() {
         anyhow::bail!(

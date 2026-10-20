@@ -23,7 +23,9 @@ use std::str::FromStr;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
 
+use mcp_loadtest::ProtocolVersion;
 use mcp_loadtest::config::Config;
+use mcp_loadtest::report::Report;
 use mcp_loadtest::scenario::lost_update::MARKER_PLACEHOLDER;
 
 /// Which official MCP SDK the generated script uses.
@@ -114,6 +116,34 @@ impl ReproRequest {
             }
         }
         Ok(())
+    }
+
+    /// Write `plan`'s script if `report` found lost updates on a session the
+    /// script can open, and otherwise say why none was written.
+    pub fn write_for(&self, plan: &ReproPlan, report: &Report) -> Result<()> {
+        if report.scenario_outcome.lost_update_count == 0 {
+            eprintln!(
+                "No lost update found, so no repro script was written to {}",
+                self.path.display()
+            );
+            return Ok(());
+        }
+        // An unpinned run negotiates, and may have run stateless; the script
+        // always opens the session with `initialize`.
+        let negotiated = report.server_info.protocol_version.as_deref();
+        if let Some(v) = negotiated.and_then(ProtocolVersion::parse)
+            && v.is_stateless()
+        {
+            eprintln!(
+                "The server negotiated {}, which has no initialize handshake, so no repro \
+                 script was written to {}; pin `protocol_version = \"2025-11-25\"` in a \
+                 `run` config to get one",
+                v.as_str(),
+                self.path.display()
+            );
+            return Ok(());
+        }
+        self.write(plan)
     }
 
     /// Write `plan`'s script to [`Self::path`] and say how to run it.
@@ -419,7 +449,7 @@ async def main():
         env={env},
 {cwd}    )
     async with stdio_client(server) as (r, w), ClientSession(r, w) as session:
-        await session.initialize()
+        await asyncio.wait_for(session.initialize(), TIMEOUT)
         # A control write, alone, before the concurrent ones: data the store
         # already held must survive them too.
         try:
@@ -885,6 +915,40 @@ mod tests {
         request(ReproSdk::Python)
             .check(&plan)
             .expect("Python keeps big integers");
+    }
+
+    #[test]
+    fn a_negotiated_stateless_session_gets_no_script() {
+        use mcp_loadtest::{ProcessStats, ScenarioMetrics, ScenarioOutcome, ServerInfo};
+        let dir = tempfile::tempdir().expect("tempdir");
+        let request = ReproRequest::new(dir.path().join("repro.py"), None).unwrap();
+        let mut report = Report {
+            run_id: "01TEST".into(),
+            started_at: std::time::SystemTime::UNIX_EPOCH,
+            duration: std::time::Duration::from_secs(1),
+            scenario_name: "lost_update".into(),
+            server_info: ServerInfo {
+                command: "python".into(),
+                args: Vec::new(),
+                pid: None,
+                protocol_version: Some("2026-07-28".into()),
+            },
+            metrics: ScenarioMetrics::default(),
+            process: ProcessStats::default(),
+            scenario_outcome: ScenarioOutcome {
+                lost_update_count: 1,
+                ..ScenarioOutcome::default()
+            },
+            trace_path: None,
+            threshold_violations: Vec::new(),
+            coverage: None,
+            per_tool: Default::default(),
+        };
+        request.write_for(&plan(), &report).expect("stateless");
+        assert!(!request.path.exists(), "a stateless run got a script");
+        report.server_info.protocol_version = Some("2025-11-25".into());
+        request.write_for(&plan(), &report).expect("initialize");
+        assert!(request.path.exists(), "an initialize run got no script");
     }
 
     #[test]

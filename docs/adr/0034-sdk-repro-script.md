@@ -35,7 +35,9 @@ script from the run's own plan.
 - **Written only for a finding.** The script is written when the run
   reports lost updates, and the CLI prints its path and how to run it. A
   passing run writes nothing and says so, so a script on disk always
-  stands for a loss that was observed.
+  stands for a loss that was observed. Neither does a run whose server
+  negotiated a stateless revision, since the script opens its session with
+  `initialize`; the CLI says to pin `protocol_version = "2025-11-25"`.
 - **Two SDKs, chosen by extension.** `.mjs` produces an ES module
   on `@modelcontextprotocol/sdk` (`Client`, `StdioClientTransport`); `.py`
   produces a script on the `mcp` package (`ClientSession`,

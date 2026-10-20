@@ -118,14 +118,7 @@ pub async fn run_lost_update(
     };
     let report = execute(target, "lost_update", Box::new(scenario), output_dir).await?;
     if let Some((request, plan)) = repro {
-        if report.scenario_outcome.lost_update_count > 0 {
-            request.write(&plan)?;
-        } else {
-            eprintln!(
-                "No lost update found, so no repro script was written to {}",
-                request.path.display()
-            );
-        }
+        request.write_for(&plan, &report)?;
     }
     gate("lost_update", &report)
 }
