@@ -1,7 +1,7 @@
 # Roadmap
 
-Status: draft, 2026-10-13. Items are tracked as GitHub issues; this file
-states the goal, the order, and the exit criteria.
+Status: draft, 2026-10-13; Phase 4 added 2026-10-20. Items are tracked as
+GitHub issues; this file states the goal, the order, and the exit criteria.
 
 ## Goal
 
@@ -77,3 +77,33 @@ Status: met on 2026-10-19 with `v0.4.1`. The Action demo repository passes
 on a pinned tag ([#7](https://github.com/clytie0x/mcp-loadtest/issues/7)).
 A clean cloud session went from download to first verdict in about 10
 seconds ([#8](https://github.com/clytie0x/mcp-loadtest/issues/8)).
+
+## Phase 4: First external CI user
+
+Status: draft, 2026-10-20; starts after the Phase 2 exit.
+
+The goal is a CI gate, but so far the only CI that runs mcp-loadtest is
+this project's own and the demo repository from Phase 3. Every confirmed
+finding came from the author running the tool, not from a maintainer
+running it on their own server. This phase tests whether a maintainer
+will keep the gate in their CI.
+
+- When an upstream bug from Phase 2 is fixed, offer its maintainers the
+  exact `lost-update` command that caught it, as a ready-to-paste Action
+  step pinned to a release. Offer it only in the issue thread, and only
+  after the fix lands.
+- Write `docs/examples/ci-gate.md`: one page that adds `lost-update` and
+  `deadlock-probe` to a server's workflow, with the write and read tools
+  for a typical file-backed server and the expected PASS output.
+- Change a detector only when a maintainer reports a false positive, a
+  missed bug, or a message they could not act on. Each such report is an
+  issue here, with a regression test before the fix.
+
+Exit: at least one public repository that the author does not own runs
+mcp-loadtest in its CI, and the workflow file has been in its default
+branch for 30 days.
+
+Decision gate: if no maintainer adopts the gate within 60 days of the first
+offer, stop adding detectors. Keep releases for security and protocol
+updates only, and record the outcome in an ADR that revisits
+[ADR 0024](docs/adr/0024-reposition-as-mcp-bug-detector.md).
