@@ -296,17 +296,22 @@ fn process_absent_now(pid: u32) -> bool {
     }
     // Windows lists an exited process until every handle to it is closed,
     // and a sibling session's descendant scan holds such handles for a
-    // moment. Ask whether it has exited: `wait` returns at once for an
-    // exited process and blocks while it runs.
+    // moment. Ask whether it has exited instead. sysinfo's `wait` checks the
+    // exit code first and sleeps at least 10 ms before each later check, so
+    // only a return in under 10 ms is that first, immediate answer; a child
+    // that exits a little later must not pass.
     if cfg!(windows) {
-        let (done, exited) = std::sync::mpsc::channel();
+        let (done, waited) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
+            let started = std::time::Instant::now();
             if let Some(process) = system.process(pid) {
                 process.wait();
             }
-            let _ = done.send(());
+            let _ = done.send(started.elapsed());
         });
-        return exited.recv_timeout(Duration::from_millis(250)).is_ok();
+        return waited
+            .recv_timeout(Duration::from_secs(1))
+            .is_ok_and(|took| took < Duration::from_millis(10));
     }
     false
 }
