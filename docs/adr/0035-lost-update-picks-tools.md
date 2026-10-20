@@ -64,7 +64,8 @@ only:
 - `const` and `enum` take their value or first value;
 - integers and numbers take the smallest value within `minimum` /
   `exclusiveMinimum` / `maximum` / `exclusiveMaximum` that is non-negative
-  if possible, or their `default`; booleans take their `default` or `false`;
+  if possible, or their `default`; an integer `multipleOf` moves that value
+  to the next multiple; booleans take their `default` or `false`;
 - an array gets one element built from `items`. If that element cannot be
   built and `minItems` allows it, the array is left empty;
 - objects recurse, and local `$ref`s (`#/...`) are followed, up to 8 levels.
@@ -82,7 +83,9 @@ and mcp-taskmanager's `request_planning` becomes
 
 **Read tool.** The first listed tool that the server marks
 `readOnlyHint: true` and not `destructiveHint: true`, and that takes no
-arguments at all: no `required` and no `properties`. An optional `limit` or
+arguments at all: no `required`, no `properties`, and nothing else in the
+schema that could require one (`$ref`, `allOf`, `if` and the like). An
+optional `limit` or
 `page` could make the read list only part of the store, so even optional
 arguments disqualify the tool. Names starting with `read`, `list`, `dump`,
 `export` or `get_all` come first, so `read_graph` wins over `get_status`.
@@ -91,10 +94,12 @@ arguments disqualify the tool. Names starting with `read`, `list`, `dump`,
 `recheck_losses`, which the CLI sets only when it picked the read tool.
 When the final read is missing markers, the check makes 3 more writes one
 at a time and reads again. The loss counts only if that second read shows
-all 3 new markers and every marker the first read showed, and still lacks
-the missing ones. Otherwise the run is inconclusive, with a note to name a
+all 3 new markers, every marker the first read showed and every other
+entry it showed (a line, or a string in JSON, with digit runs compared
+equal so a count or timestamp may move), and still lacks the missing ones. Otherwise the run is inconclusive, with a note to name a
 read tool. This catches a read that caps its output at the newest N items
-(the new writes push out markers it showed before), at the first N (the new
+(the new writes push out markers or other data it showed before), at the
+first N (the new
 writes do not show), or truncates (the new writes are at the end). It also
 catches a store whose missing writes appear later, which is not consistent
 yet rather than lossy. A loss on a store that holds its data is confirmed

@@ -506,7 +506,9 @@ impl LostUpdate {
                 missing.push(control);
             }
             return self
-                .recheck(session, ctx, outcome, loss_notes, &shown, &missing, nonce)
+                .recheck(
+                    session, ctx, outcome, loss_notes, &read, &shown, &missing, nonce,
+                )
                 .await;
         }
         outcome.notes.extend(loss_notes);
@@ -515,8 +517,9 @@ impl LostUpdate {
 
     /// Confirm a loss before it counts (ADR 0035): write [`RECHECK_WRITES`]
     /// markers one at a time, then read again. The second read must show
-    /// every one of them, every marker the first read showed (`shown`), and
-    /// still none of the `missing` ones. Otherwise the read is not a
+    /// every one of them, every marker the first read showed (`shown`),
+    /// every other entry of the first read (`first`), and still none of the
+    /// `missing` ones. Otherwise the read is not a
     /// complete listing (it caps, pages or sorts its output) or not a
     /// stable one, and the check is inconclusive rather than failed.
     /// `loss_notes` describe the loss and are kept only when it is
@@ -528,6 +531,7 @@ impl LostUpdate {
         ctx: &RunContext,
         mut outcome: ScenarioOutcome,
         loss_notes: Vec<String>,
+        first: &CallToolResult,
         shown: &[&str],
         missing: &[&str],
         nonce: &str,
@@ -576,15 +580,20 @@ impl LostUpdate {
         let unlisted = written.iter().filter(|mark| !contains(&read, mark)).count();
         let dropped = shown.iter().filter(|mark| !contains(&read, mark)).count();
         let reappeared = missing.iter().filter(|mark| contains(&read, mark)).count();
-        if unlisted > 0 || dropped > 0 {
+        // A capped or sorted read of a store that held other data can drop
+        // that data, not a marker, to make room for the recheck writes.
+        let run_prefix = format!("mlt{nonce}");
+        let evicted = evicted_entries(first, &read, &run_prefix);
+        if unlisted > 0 || dropped > 0 || evicted > 0 {
             unconfirmed(
                 &mut outcome,
                 format!(
                     "after {RECHECK_WRITES} more writes made one at a time, the second read \
-                     lacked {unlisted} of them and {dropped} marker{} the first read showed, \
-                     so the read does not list everything stored (it may cap, page or sort \
-                     its output)",
-                    if dropped == 1 { "" } else { "s" }
+                     lacked {unlisted} of them, {dropped} marker{} and {evicted} other \
+                     entr{} the first read showed, so the read does not list everything \
+                     stored (it may cap, page or sort its output)",
+                    if dropped == 1 { "" } else { "s" },
+                    if evicted == 1 { "y" } else { "ies" }
                 ),
             );
         } else if reappeared > 0 {
@@ -793,6 +802,61 @@ fn error_text(result: &CallToolResult) -> String {
     }
 }
 
+/// How many entries of `first` that hold no marker of this run (`run_prefix`)
+/// are missing from `second`. An entry is a line of text, or a string inside
+/// JSON a text holds; digit runs compare equal, so a count or a timestamp
+/// that moved between the reads is not a missing entry.
+fn evicted_entries(first: &CallToolResult, second: &CallToolResult, run_prefix: &str) -> usize {
+    let counts = |result: &CallToolResult| {
+        let mut out = std::collections::HashMap::<String, usize>::new();
+        let mut entries = Vec::new();
+        let value = call_tool_result_to_value(result);
+        // `_meta` and the envelope are not store data.
+        collect_entries(&value["content"], &mut entries);
+        collect_entries(&value["structuredContent"], &mut entries);
+        for entry in entries.into_iter().filter(|e| !e.contains(run_prefix)) {
+            *out.entry(without_digits(&entry)).or_default() += 1;
+        }
+        out
+    };
+    let after = counts(second);
+    counts(first)
+        .into_iter()
+        .map(|(entry, n)| n.saturating_sub(after.get(&entry).copied().unwrap_or(0)))
+        .sum()
+}
+
+fn collect_entries(value: &Value, out: &mut Vec<String>) {
+    match value {
+        Value::String(text) => match serde_json::from_str::<Value>(text) {
+            Ok(inner @ (Value::Array(_) | Value::Object(_))) => collect_entries(&inner, out),
+            _ => out.extend(
+                text.lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .map(str::to_owned),
+            ),
+        },
+        Value::Array(items) => items.iter().for_each(|item| collect_entries(item, out)),
+        Value::Object(map) => map.values().for_each(|item| collect_entries(item, out)),
+        _ => {}
+    }
+}
+
+fn without_digits(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if c.is_ascii_digit() {
+            if !out.ends_with('#') {
+                out.push('#');
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn contains(result: &CallToolResult, mark: &str) -> bool {
     call_tool_result_to_value(result).to_string().contains(mark)
 }
@@ -842,6 +906,38 @@ mod tests {
                 "label": "w7-s2"
             })
         );
+    }
+
+    #[test]
+    fn evicted_entries_counts_other_data_a_read_dropped() {
+        let result = |text: &str| CallToolResult {
+            meta: None,
+            content: vec![Content::Text {
+                text: text.to_owned(),
+            }],
+            is_error: false,
+            structured_content: None,
+        };
+        let prefix = "mltabcd1234";
+        // A capped JSON listing: the recheck markers pushed two older
+        // records out while every marker the first read showed stayed.
+        let first = result(r#"["alpha", "beta", "mltabcd1234w0000s0000x"]"#);
+        let second = result(
+            r#"["mltabcd1234w0000s0000x", "mltabcd1234w000rs0000x", "mltabcd1234w000rs0001x"]"#,
+        );
+        assert_eq!(evicted_entries(&first, &second, prefix), 2);
+        // A complete listing keeps them; a count or timestamp that moved
+        // is not an eviction.
+        let first = result("Found 3 items at 10:01\nalpha\nbeta\nmltabcd1234w0000s0000x");
+        let second = result(
+            "Found 5 items at 10:02\nalpha\nbeta\nmltabcd1234w0000s0000x\n\
+             mltabcd1234w000rs0000x\nmltabcd1234w000rs0001x",
+        );
+        assert_eq!(evicted_entries(&first, &second, prefix), 0);
+        // Repeated entries count: one of two `item` lines gone is one.
+        let first = result("item 1\nitem 2");
+        let second = result("item 2");
+        assert_eq!(evicted_entries(&first, &second, prefix), 1);
     }
 
     #[test]

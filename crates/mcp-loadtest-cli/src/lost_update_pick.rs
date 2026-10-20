@@ -229,6 +229,23 @@ pub fn read_rejection(tool: &Tool) -> Option<String> {
     if annotation(tool, "destructiveHint") == Some(true) {
         return Some("marked destructive".to_owned());
     }
+    // Anything beyond a plain object schema (a `$ref`, `allOf`, `if` ...) may
+    // require arguments this check cannot see, so it does not qualify.
+    const PLAIN: &[&str] = &[
+        "type",
+        "properties",
+        "required",
+        "additionalProperties",
+        "$schema",
+        "$id",
+        "title",
+        "description",
+    ];
+    if let Some(schema) = tool.input_schema.as_object()
+        && schema.keys().any(|key| !PLAIN.contains(&key.as_str()))
+    {
+        return Some("its input schema may require arguments".to_owned());
+    }
     let required = match tool.input_schema.get("required") {
         None | Some(Value::Null) => false,
         Some(Value::Array(required)) => !required.is_empty(),
@@ -477,16 +494,26 @@ fn integer(obj: &Map<String, Value>, at: &str) -> Result<Value, String> {
             bound.floor()
         }
     });
-    let candidate = match (lower, upper) {
+    let mut candidate = match (lower, upper) {
         (Some(lower), _) => lower,
         (None, Some(upper)) if upper < 0.0 => upper,
         (None, _) => 0.0,
     };
+    // Round towards the bound that set the candidate onto the nearest
+    // multiple: up from a lower bound, down from a negative upper one.
+    if let Some(step) = obj.get("multipleOf").and_then(Value::as_f64) {
+        if step <= 0.0 {
+            return Err(format!("{at} has no integer this builder can choose"));
+        }
+        candidate = if lower.is_some() || candidate >= 0.0 {
+            (candidate / step).ceil() * step
+        } else {
+            (candidate / step).floor() * step
+        };
+    }
     if upper.is_some_and(|upper| candidate > upper)
-        || obj
-            .get("multipleOf")
-            .and_then(Value::as_f64)
-            .is_some_and(|step| step == 0.0 || candidate % step != 0.0)
+        || lower.is_some_and(|lower| candidate < lower)
+        || candidate.fract() != 0.0
         || !(-9.0e15..=9.0e15).contains(&candidate)
     {
         return Err(format!("{at} has no integer this builder can choose"));
@@ -713,6 +740,8 @@ mod tests {
                 "kind": {"type": "string", "enum": ["note", "task"]},
                 "version": {"const": 2},
                 "count": {"type": "integer", "minimum": 1},
+                "even": {"type": "integer", "minimum": 1, "multipleOf": 2},
+                "below": {"type": "integer", "maximum": -3, "multipleOf": 2},
                 "above": {"type": "integer", "exclusiveMinimum": 3},
                 "negative": {"type": "integer", "maximum": -2},
                 "ratio": {"type": "number", "exclusiveMinimum": 0.5, "maximum": 2},
@@ -725,14 +754,16 @@ mod tests {
                 "entry": {"$ref": "#/$defs/entry"},
                 "optional": {"type": "string"}
             },
-            "required": ["text", "kind", "version", "count", "above", "negative", "ratio",
+            "required": ["text", "kind", "version", "count", "even", "below", "above",
+                         "negative", "ratio",
                          "page", "flag", "on", "nothing", "tags", "meta", "entry"],
             "$defs": {"entry": {"properties": {"id": {"type": "string"}}, "required": ["id"]}}
         });
         assert_eq!(
             build_write_args(&schema),
             Ok(json!({
-                "text": "{marker}", "kind": "note", "version": 2, "count": 1, "above": 4,
+                "text": "{marker}", "kind": "note", "version": 2, "count": 1, "even": 2,
+                "below": -4, "above": 4,
                 "negative": -2, "ratio": 1.5, "page": 7, "flag": false, "on": true,
                 "nothing": null, "tags": [], "meta": {}, "entry": {"id": "{marker}"}
             }))
@@ -924,8 +955,20 @@ mod tests {
             tool("get_status", json!({"type": "object", "properties": {}}), read_only.clone()),
             tool("read_graph", json!({"type": "object", "properties": {}, "required": []}),
                  read_only.clone()),
-            tool("listAll", json!({}), read_only)
+            tool("listAll", json!({}), read_only.clone()),
+            tool("list_ref", json!({"$ref": "#/$defs/q",
+                 "$defs": {"q": {"type": "object", "required": ["q"]}}}), read_only.clone()),
+            tool("list_all_of", json!({"type": "object",
+                 "allOf": [{"required": ["q"]}]}), read_only)
         ]));
+        for composed in &listed[9..] {
+            assert_eq!(
+                read_rejection(composed).as_deref(),
+                Some("its input schema may require arguments"),
+                "{}",
+                composed.name
+            );
+        }
         assert_eq!(
             pick_read_tool(&listed).map(|tool| tool.name.as_str()),
             Some("read_graph"),
