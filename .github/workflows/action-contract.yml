@@ -82,7 +82,7 @@ jobs:
           command_name="${1-}"
 
           case "${command_name}" in
-            deadlock-probe|run|doctor)
+            deadlock-probe|lost-update|run|doctor)
               case " $* " in
                 *" --action-redact-server-identity "*) ;;
                 *) echo "missing Action redaction flag" >&2; exit 65 ;;
@@ -116,7 +116,7 @@ jobs:
           PY
 
           case "${command_name}" in
-            deadlock-probe|run)
+            deadlock-probe|lost-update|run)
               shift
               output_dir=""
               while [ "$#" -gt 0 ]; do
@@ -453,6 +453,64 @@ jobs:
             "${CAPTURE_ROOT}.run.json"
           then
             echo "run output leaked the config server sentinel" >&2
+            exit 1
+          fi
+
+      - name: Exercise lost-update argv and report root
+        id: lost_update
+        uses: ./
+        env:
+          MCP_LOADTEST_FIXTURE_CAPTURE: ${{ runner.temp }}/action-lost-update
+          MCP_LOADTEST_FIXTURE_RUN_ID: 01J00000000000000000000006
+        with:
+          command: lost-update
+          server: python -m fake_server --token ACTION_SERVER_SECRET_7F3B
+          working-directory: .action-contract/success
+          args: '["--write-tool","append","--write-args","{\"item\":\"{marker}\"}","--read-tool","read","--pipelined"]'
+
+      - name: Verify lost-update received the server and the Action-owned output root
+        shell: bash
+        env:
+          ACTION_PASSED: ${{ steps.lost_update.outputs.passed }}
+          ACTION_REPORT_DIR: ${{ steps.lost_update.outputs.report-dir }}
+          CAPTURE_ROOT: ${{ runner.temp }}/action-lost-update
+          SECRET_SENTINEL: ACTION_SERVER_SECRET_7F3B
+        run: |
+          set -euo pipefail
+          [ "${ACTION_PASSED}" = "true" ]
+          case "${ACTION_REPORT_DIR}" in
+            "${RUNNER_TEMP}"/mcp-loadtest-action-runs.*/01J00000000000000000000006) ;;
+            *) echo "unexpected lost-update report path: ${ACTION_REPORT_DIR}" >&2; exit 1 ;;
+          esac
+          python3 - "${CAPTURE_ROOT}" "${ACTION_REPORT_DIR}" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          capture = pathlib.Path(sys.argv[1]).with_suffix(".lost-update.json")
+          action_root = str(pathlib.Path(sys.argv[2]).parent)
+          argv = json.loads(capture.read_text())
+          assert argv == [
+              "lost-update",
+              "--server",
+              "[REDACTED]",
+              "--write-tool",
+              "append",
+              "--write-args",
+              '{"item":"{marker}"}',
+              "--read-tool",
+              "read",
+              "--pipelined",
+              "--output-dir",
+              action_root,
+              "--action-redact-server-identity",
+          ], argv
+          PY
+          if grep -R -F "${SECRET_SENTINEL}" \
+            "${ACTION_REPORT_DIR}" \
+            "${CAPTURE_ROOT}.lost-update.json"
+          then
+            echo "lost-update output leaked the server sentinel" >&2
             exit 1
           fi
 

@@ -150,6 +150,7 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
                 server,
                 env,
                 startup_timeout: cmd_run::parse_dur_str(&startup_timeout)?,
+                redact_server_identity: false,
             };
             cmd_detect::run_race_check(&target, &tool, concurrent, &args, &output_dir).await
         }
@@ -165,11 +166,13 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
             env,
             startup_timeout,
             output_dir,
+            action_redact_server_identity,
         } => {
             let target = cmd_detect::DetectTarget {
                 server,
                 env,
                 startup_timeout: cmd_run::parse_dur_str(&startup_timeout)?,
+                redact_server_identity: action_redact_server_identity,
             };
             cmd_detect::run_lost_update(
                 &target,

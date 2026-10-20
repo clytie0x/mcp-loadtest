@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The GitHub Action accepts `command: lost-update`. It passes `server` and
+  the caller's `args` to `mcp-loadtest lost-update`, writes the report to the
+  Action-owned directory like `deadlock-probe`, and runs it with server
+  identity redacted. `lost-update` gained the hidden
+  `--action-redact-server-identity` flag for this: the server command,
+  `--env` values and malformed JSON flag values stay out of reports and
+  diagnostics.
+
 - `crates/engine/tests/taskmanager_regression.rs`: an ignored regression test
   that runs `lost_update` against `@kazuph/mcp-taskmanager` 1.1.1, pinned on
   npm, in pipelined and multi-process modes and expects lost updates.

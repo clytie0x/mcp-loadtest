@@ -107,7 +107,7 @@ PY
 #   MCP_LOADTEST_REPORT_ROOT = unique root, or empty for `none`
 #
 # Callers cannot choose either output override. The Action appends its own
-# `--output-dir` for deadlock-probe or hidden `--action-output-dir` for
+# `--output-dir` for deadlock-probe and lost-update, or hidden `--action-output-dir` for
 # run only after this function accepts the caller's literal argv.
 mcp_loadtest_prepare_report_target() {
   if [ "$#" -lt 2 ]; then
@@ -128,7 +128,7 @@ mcp_loadtest_prepare_report_target() {
     doctor)
       MCP_LOADTEST_REPORT_MODE="none"
       ;;
-    deadlock-probe|run)
+    deadlock-probe|lost-update|run)
       MCP_LOADTEST_REPORT_MODE="single"
       ;;
     *)
@@ -150,6 +150,7 @@ mcp_loadtest_prepare_report_target() {
     esac
     case "${command}:${arg}" in
       deadlock-probe:--output-dir|deadlock-probe:--output-dir=*|\
+      lost-update:--output-dir|lost-update:--output-dir=*|\
       run:--output-dir|run:--output-dir=*)
         echo "mcp-loadtest action: --output-dir is reserved for the Action" >&2
         return 2

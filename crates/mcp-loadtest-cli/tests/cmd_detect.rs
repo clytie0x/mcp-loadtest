@@ -18,6 +18,7 @@ fn target(fixture: &str, extra: &str, env: Vec<String>) -> DetectTarget {
         env,
         // Cold Python starts on a loaded Windows runner can exceed 10 s.
         startup_timeout: Duration::from_secs(60),
+        redact_server_identity: false,
     }
 }
 

@@ -69,7 +69,7 @@ that is the regression gate. The action uploads nothing itself; keep the
 | Input               | Default          | Description                                                                                                     |
 | ------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------- |
 | `server`            | — (required)     | Server command string passed to `--server`, e.g. `"python -m my_mcp"`. Ignored by `command: run` (TOML has it). |
-| `command`           | `deadlock-probe` | One of `deadlock-probe`, `run`, `doctor`. For `run`, pass `--config ci.toml` via `args`.                        |
+| `command`           | `deadlock-probe` | One of `deadlock-probe`, `lost-update` (after v0.6.0), `run`, `doctor`. For `run`, pass `--config ci.toml` via `args`. |
 | `args`              | `[]`             | Extra CLI arguments as a JSON array of strings. Each element is one literal argument; shell syntax is rejected. |
 | `version`           | `v0.6.0`         | Stable release tag of the binary to install. Set `latest` explicitly only when reproducibility is not required. |
 | `baseline`          | `""`             | Baseline `metrics.json` for a `run` or `deadlock-probe` report; rejected for `doctor`.                          |
