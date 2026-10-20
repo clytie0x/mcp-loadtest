@@ -35,7 +35,7 @@ script from the run's own plan.
   reports lost updates, and the CLI prints its path and how to run it. A
   passing run writes nothing and says so, so a script on disk always
   stands for a loss that was observed.
-- **Two SDKs, chosen by extension.** `.mjs` (or `.js`) produces an ES module
+- **Two SDKs, chosen by extension.** `.mjs` produces an ES module
   on `@modelcontextprotocol/sdk` (`Client`, `StdioClientTransport`); `.py`
   produces a script on the `mcp` package (`ClientSession`,
   `StdioServerParameters`, `stdio_client`). `--repro-sdk node|python`

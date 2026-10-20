@@ -50,12 +50,13 @@ impl FromStr for ReproSdk {
 }
 
 impl ReproSdk {
-    /// The SDK a script path implies: `.py` is Python, `.mjs` and `.js` are
-    /// Node.
+    /// The SDK a script path implies: `.py` is Python, `.mjs` is Node. A
+    /// `.js` file runs as CommonJS under many `package.json` files, so it
+    /// needs `--repro-sdk node`.
     pub fn from_path(path: &Path) -> Option<Self> {
         match path.extension()?.to_str()? {
             "py" => Some(Self::Python),
-            "mjs" | "js" => Some(Self::Node),
+            "mjs" => Some(Self::Node),
             _ => None,
         }
     }
@@ -283,8 +284,15 @@ results.forEach((r, i) => {{
   else acknowledged.push(marker(i));
 }});
 
-const read = JSON.stringify(await client.callTool({{ name: {read_tool}, arguments: {read_args} }}));
+const readResult = await client.callTool({{ name: {read_tool}, arguments: {read_args} }});
 await client.close();
+if (readResult.isError) {{
+  console.log(`calls: ${{CALLS}} sent, ${{acknowledged.length}} succeeded, ${{refused}} isError, ${{failed}} failed`);
+  console.log("INCONCLUSIVE: the read tool returned isError, so nothing can be concluded about lost writes");
+  console.log(JSON.stringify(readResult.content));
+  process.exit(2);
+}}
+const read = JSON.stringify(readResult);
 const kept = acknowledged.filter((m) => read.includes(m));
 console.log(`calls: ${{CALLS}} sent, ${{acknowledged.length}} succeeded, ${{refused}} isError, ${{failed}} failed`);
 console.log(`read: ${{kept.length}} of ${{acknowledged.length}} acknowledged writes are in the result`);
@@ -365,7 +373,13 @@ async def main():
                 refused += 1
             else:
                 acknowledged.append(marker(i))
-        read = (await session.call_tool({read_tool}, {read_args})).model_dump_json()
+        read_result = await session.call_tool({read_tool}, {read_args})
+    if is_error(read_result):
+        print(f"calls: {{CALLS}} sent, {{len(acknowledged)}} succeeded, {{refused}} isError, {{failed}} failed")
+        print("INCONCLUSIVE: the read tool returned isError, so nothing can be concluded about lost writes")
+        print(read_result.model_dump_json())
+        return 2
+    read = read_result.model_dump_json()
     kept = [m for m in acknowledged if m in read]
     print(f"calls: {{CALLS}} sent, {{len(acknowledged)}} succeeded, {{refused}} isError, {{failed}} failed")
     print(f"read: {{len(kept)}} of {{len(acknowledged)}} acknowledged writes are in the result")
@@ -607,6 +621,8 @@ mod tests {
             r#"name: "list_requests", arguments: {}"#,
             "Promise.allSettled",
             "process.exitCode = 1;",
+            "if (readResult.isError) {",
+            "process.exit(2);",
         ] {
             assert!(script.contains(needle), "missing {needle}:\n{script}");
         }
@@ -631,6 +647,8 @@ mod tests {
             r#"session.call_tool("list_requests", {})"#,
             "asyncio.gather",
             "sys.exit(asyncio.run(main()))",
+            "if is_error(read_result):",
+            "return 2",
         ] {
             assert!(script.contains(needle), "missing {needle}:\n{script}");
         }
@@ -666,7 +684,7 @@ mod tests {
     fn sdk_comes_from_the_flag_or_the_extension() {
         let infer = |p: &str| ReproRequest::new(PathBuf::from(p), None).map(|r| r.sdk);
         assert_eq!(infer("repro.mjs").ok(), Some(ReproSdk::Node));
-        assert_eq!(infer("repro.js").ok(), Some(ReproSdk::Node));
+        assert!(infer("repro.js").is_err());
         assert_eq!(infer("repro.py").ok(), Some(ReproSdk::Python));
         assert!(infer("repro.txt").is_err());
         let forced = ReproRequest::new(PathBuf::from("repro.txt"), Some(ReproSdk::Python));

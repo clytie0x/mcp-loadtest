@@ -99,6 +99,11 @@ pub async fn run_from_config_with_repro(
         config.output.report_dir = output_dir;
     }
     let scenario = build_scenario(&config.scenario.kind, &config.scenario.params)?;
+    // The script embeds the server command and env, which Action mode keeps
+    // out of every output.
+    if repro.is_some() && redact_server_identity {
+        anyhow::bail!("--emit-repro is not available in Action mode");
+    }
     let repro_plan = repro.map(|_| ReproPlan::from_config(&config)).transpose()?;
     let output_dir = config.output.report_dir.clone();
     let formats = config.output.formats.clone();

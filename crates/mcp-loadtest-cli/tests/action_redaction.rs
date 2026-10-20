@@ -297,3 +297,39 @@ fn action_mode_refuses_emit_repro() {
     );
     assert!(!script.exists(), "Action mode wrote a repro script");
 }
+
+/// `run --emit-repro` is refused in Action mode too, before the config's
+/// server is started.
+#[test]
+fn action_mode_refuses_run_emit_repro() {
+    let temp = tempdir().expect("tempdir");
+    let config = temp.path().join("lost-update.toml");
+    std::fs::write(
+        &config,
+        format!(
+            "[server]\ncommand = \"no-such-action-binary\"\nargs = [\"{SENTINEL}\"]\n\n\
+             [scenario]\ntype = \"lost_update\"\npipelined = true\nconcurrent = 2\n\
+             write_tool = \"append\"\nwrite_args = {{ item = \"{{marker}}\" }}\n\
+             read_tool = \"read\"\n"
+        ),
+    )
+    .expect("write config");
+    let script = temp.path().join("repro.py");
+    let refused = run_cli(&[
+        "run",
+        "--config",
+        &path_text(&config),
+        "--emit-repro",
+        &path_text(&script),
+        "--action-output-dir",
+        &path_text(&temp.path().join("runs")),
+        "--action-redact-server-identity",
+    ]);
+    assert_no_sentinel(&refused, SENTINEL);
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("not available in Action mode"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(!script.exists(), "Action mode wrote a repro script");
+}
