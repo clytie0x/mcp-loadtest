@@ -487,7 +487,9 @@ The scenario has three steps:
    unique marker, together without waiting between them, and wait for every
    response.
 3. **Verification read.** Call `conformance_read` once and check that every
-   write that returned a successful result is visible. Writes that returned
+   write that returned a successful result appears exactly once (a missing
+   marker is a lost effect, a duplicated one is an outcome no sequential
+   order produces). Writes that returned
    `isError` are allowed. If none of the N writes succeeded, the run
    exercised nothing and is reported as inconclusive, not as conformant.
 
