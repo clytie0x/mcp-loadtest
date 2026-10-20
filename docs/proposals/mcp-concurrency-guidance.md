@@ -473,7 +473,10 @@ against the implementation under test. The harness cannot know which of an
 arbitrary server's tools write or how to read the result back, so the plan
 is an opt-in tool contract: a server that wants this coverage exposes two
 tools in its conformance build, for example `conformance_append` (takes a
-string `item` and stores it in shared state) and `conformance_read` (returns
+string `item` and stores it in shared state; it also takes an optional
+`hold_ms` and, when given, waits that long after reading the current state
+and before writing it back, so that concurrent calls are held inside the
+same read-modify-write window) and `conformance_read` (returns
 every stored item). Servers that do not implement the contract skip the
 scenario. If maintainers prefer not to add a tool contract, the fallback is
 to record the requirement as a framework-gap exclusion with a tracking
@@ -486,8 +489,12 @@ The scenario has three steps:
    missing, the contract is not working and the scenario is reported as
    skipped, not as a pass or a fail.
 2. **Concurrent writes.** Send N `conformance_append` calls, each with a
-   unique marker, together without waiting between them, and wait for every
-   response.
+   unique marker and the same `hold_ms` (for example 200 ms), together
+   without waiting between them, and wait for every response. The hold
+   makes the calls' read-modify-write sections overlap on any server that
+   handles them concurrently, so a passing run cannot be an accident of
+   scheduling; the step runs for several rounds to reduce that chance
+   further for servers that ignore `hold_ms`.
 3. **Verification read.** Call `conformance_read` once and check that every
    write that returned a successful result appears exactly once (a missing
    marker is a lost effect, a duplicated one is an outcome no sequential
@@ -506,7 +513,10 @@ Traceability, one row per normative statement in the Specification section:
 | A client that needs one call to observe another SHOULD wait for the first response | Exclusion (framework gap): client mode would need an agent that issues dependent calls; tracking issue to be filed with the SEP |
 
 The author offers to contribute the scenario, based on mcp-loadtest's
-`lost_update` check, which already does this against real servers.
+`lost_update` check. That check already sends uniquely marked concurrent
+writes to real servers and verifies that each acknowledged marker is
+present; it does not yet check that each marker appears exactly once, and
+that part would be added for the conformance scenario.
 
 ## Open Questions
 
