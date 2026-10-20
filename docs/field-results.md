@@ -18,8 +18,8 @@ mcp-knowledge-graph 1.3.2, `@modelcontextprotocol/server-filesystem` 2.0.0,
 basic-memory 0.23.2, and `@danielmarbach/mnemonic-mcp` 1.0.0.
 server-filesystem and mcp-taskmanager are from the 2026-10-19 file-backed
 run, shrimp and basic-memory from the pipelined run that followed, and
-mnemonic from the run after that. Five are still open upstream:
-basic-memory has since been fixed on upstream `main` (not yet released).
+mnemonic from the run after that. basic-memory has since been fixed on
+upstream `main` (not yet released); the other five are still open upstream.
 On 2026-10-19 the project owner decided not to report the
 mcp-knowledge-graph bug upstream, which leaves four to report. None has
 been reported yet, so the Phase 2 exit is not met; see the
