@@ -39,6 +39,7 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0031](0031-defer-crates-io-publication.md)   | Defer crates.io publication (supersedes 0020)                         | Accepted |
 | [0032](0032-lost-update-refused-writes.md)    | A refused write is not a lost-update error (amends 0027)              | Accepted |
 | [0033](0033-pipelined-lost-update.md)         | Pipelined lost-update check on one session (extends 0027)             | Accepted |
+| [0034](0034-sdk-repro-script.md)              | Write an official-SDK repro script from a pipelined lost-update finding (extends 0033) | Accepted |
 
 ## When to write a new ADR
 
