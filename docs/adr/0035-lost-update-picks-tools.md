@@ -77,7 +77,10 @@ confidence: `anyOf`, `oneOf`, `allOf`, `not`, `if`; a string with a
 `format`, a `pattern`, or a length that rules out a 22-character marker; an
 array that needs two or more items; tuples; a required property without a
 schema or type; a `multipleOf` it cannot meet. It also refuses when no
-required string is left to carry `{marker}`. server-memory's
+required string is left to carry `{marker}`, or when the built arguments,
+with a real marker in place, do not validate against the whole input
+schema (a `dependentRequired`, a `default` outside its bounds and other
+keywords the builder does not read). server-memory's
 `create_entities` becomes
 `{"entities":[{"name":"{marker}","entityType":"{marker}","observations":["{marker}"]}]}`
 and mcp-taskmanager's `request_planning` becomes
@@ -97,9 +100,10 @@ arguments disqualify the tool. Names starting with `read`, `list`, `dump`,
 When the final read is missing markers, the check makes 3 more writes one
 at a time and reads again. The loss counts only if that second read shows
 all 3 new markers, every marker the first read showed and every other
-entry it showed (a line, or a string in JSON, with digit runs compared
-equal so a count or timestamp may move), and still lacks the missing ones. Otherwise the run is inconclusive, with a note to name a
-read tool. This catches a read that caps its output at the newest N items
+entry it showed (a line, or a key or string in JSON, with digit runs
+compared equal so a count or timestamp may move), and still lacks the
+missing ones. Otherwise the run is inconclusive, with a note to name a read
+tool. This catches a read that caps its output at the newest N items
 (the new writes push out markers or other data it showed before), at the
 first N (the new
 writes do not show), or truncates (the new writes are at the end). It also

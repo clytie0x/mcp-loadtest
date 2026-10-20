@@ -15,6 +15,7 @@ use std::fmt::Write as _;
 use serde_json::{Map, Value};
 
 use mcp_loadtest::protocol::mcp::Tool;
+use mcp_loadtest::protocol::schema::validate;
 use mcp_loadtest::scenario::lost_update::{MARKER_LEN, MARKER_PLACEHOLDER};
 
 use crate::cmd_deadlock::{annotation, printable};
@@ -281,7 +282,9 @@ fn has_prefix(name: &str, prefixes: &[&str]) -> bool {
 /// and `const` (the first value), numeric bounds, and local `$ref`s.
 /// Refuses what it cannot fill with confidence: `anyOf`, `oneOf`, `allOf`,
 /// `not`, `if`, strings with a `format` or `pattern` or a length that rules
-/// out a marker, arrays that need more than one element, and tuples.
+/// out a marker, arrays that need more than one element, and tuples. The
+/// result, with a real marker in place of `{marker}`, must then validate
+/// against the whole schema.
 ///
 /// # Errors
 ///
@@ -299,8 +302,26 @@ pub fn build_write_args(schema: &Value) -> Result<Value, String> {
     if !builder.marked {
         return Err(format!("no required string can carry {MARKER_PLACEHOLDER}"));
     }
+    // The builder reads only the keywords it knows; a `dependentRequired`,
+    // an out-of-range `default` and the like are caught by validating what
+    // a real write would send against the whole schema.
+    let sample = serde_json::to_string(&args)
+        .map(|text| text.replace(MARKER_PLACEHOLDER, SAMPLE_MARKER))
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .ok_or_else(|| "the built arguments cannot be checked".to_owned())?;
+    if let Some(violation) = validate(schema, &sample).first() {
+        return Err(format!(
+            "the built arguments do not satisfy the input schema ({}: {})",
+            violation.path, violation.message
+        ));
+    }
     Ok(args)
 }
+
+/// A marker as a write sends it, for checking built arguments.
+const SAMPLE_MARKER: &str = "mlt00000000w0000s0000x";
+const _: () = assert!(SAMPLE_MARKER.len() == MARKER_LEN);
 
 struct ArgsBuilder<'a> {
     root: &'a Value,
@@ -818,6 +839,18 @@ mod tests {
                 json!({"type": "object", "properties": {"v": {"anyOf": [{"type": "string"},
                     {"type": "integer"}]}}, "required": ["v"]}),
                 "`v` uses `anyOf`",
+            ),
+            (
+                json!({"type": "object", "properties": {"name": {"type": "string"},
+                    "kind": {"type": "string"}}, "required": ["name"],
+                    "dependentRequired": {"name": ["kind"]}}),
+                "the built arguments do not satisfy the input schema",
+            ),
+            (
+                json!({"type": "object", "properties": {"s": {"type": "string"},
+                    "n": {"type": "integer", "minimum": 1, "default": 0}},
+                    "required": ["s", "n"]}),
+                "the built arguments do not satisfy the input schema",
             ),
             (
                 json!({"type": "object", "properties": {"s": {"$ref": "#/$defs/name",

@@ -852,7 +852,14 @@ fn collect_entries(value: &Value, out: &mut Vec<String>) {
             ),
         },
         Value::Array(items) => items.iter().for_each(|item| collect_entries(item, out)),
-        Value::Object(map) => map.values().for_each(|item| collect_entries(item, out)),
+        // Keys too: a store keyed by record ID can lose a key whose value
+        // another record repeats.
+        Value::Object(map) => {
+            for (key, item) in map {
+                out.push(key.clone());
+                collect_entries(item, out);
+            }
+        }
         _ => {}
     }
 }
@@ -948,6 +955,13 @@ mod tests {
              mltabcd1234w000rs0000x\nmltabcd1234w000rs0001x",
         );
         assert_eq!(evicted_entries(&first, &second, prefix), 0);
+        // Records keyed by ID with the same value: a dropped key counts.
+        let first =
+            result(r#"{"alpha": "todo", "beta": "todo", "mltabcd1234w0000s0000x": "todo"}"#);
+        let second = result(
+            r#"{"beta": "todo", "mltabcd1234w0000s0000x": "todo", "mltabcd1234w000rs0000x": "todo"}"#,
+        );
+        assert_eq!(evicted_entries(&first, &second, prefix), 1);
         // Repeated entries count: one of two `item` lines gone is one.
         let first = result("item 1\nitem 2");
         let second = result("item 2");
