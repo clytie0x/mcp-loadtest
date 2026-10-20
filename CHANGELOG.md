@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--env` values and malformed JSON flag values stay out of reports and
   diagnostics.
 
+- `lost-update --pipelined --emit-repro <path>` (and `run --emit-repro` for a
+  pipelined `lost_update` config) writes a standalone script that reproduces
+  a finding on the official MCP SDK: `.mjs` for `@modelcontextprotocol/sdk`,
+  `.py` for the `mcp` package, or `--repro-sdk node|python`. The script
+  starts the server with the run's command, args and env, sends one round of
+  `--concurrent` writes at once with unique markers, reads once, and exits 1
+  when acknowledged writes are missing. It is written only when the run
+  finds lost updates. See ADR 0034 and
+  [docs/examples/lost-update.md](docs/examples/lost-update.md#a-repro-for-the-upstream-report). Not available in the
+  Action, which keeps the server command out of every output.
 - `crates/engine/tests/taskmanager_regression.rs`: an ignored regression test
   that runs `lost_update` against `@kazuph/mcp-taskmanager` 1.1.1, pinned on
   npm, in pipelined and multi-process modes and expects lost updates.

@@ -122,8 +122,12 @@ session is its own process, so they must share a file, database, or service.
 --writes-per-worker rounds sends --concurrent writes back to back before
 reading any reply, as a client running tool calls in parallel does. This
 finds races inside one process, and needs no shared store.
+
+--emit-repro <path> (with --pipelined) writes a standalone script on the
+official MCP SDK when the run finds lost updates: one round of --concurrent
+writes, then the read. `.mjs` is Node, `.py` Python (--repro-sdk overrides).
 Tunable knobs: --concurrent, --writes-per-worker, --pipelined, --read-args,
-  --env, --startup-timeout.
+  --env, --startup-timeout, --emit-repro, --repro-sdk.
 `run` with `[scenario] type = \"lost_update\"` is the config form; see
 docs/examples/lost-update.md.
 ";

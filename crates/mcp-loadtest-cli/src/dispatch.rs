@@ -3,6 +3,7 @@
 
 use anyhow::{Context, Result};
 
+use mcp_loadtest_cli::repro::ReproRequest;
 use mcp_loadtest_cli::{cmd_compare, cmd_deadlock, cmd_detect, cmd_doctor, cmd_run};
 
 use crate::Cmd;
@@ -53,14 +54,20 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
             trace,
             action_output_dir,
             action_redact_server_identity,
+            emit_repro,
+            repro_sdk,
         } => {
-            cmd_run::run_from_config_with_output(
+            let repro = emit_repro
+                .map(|path| ReproRequest::new(path, repro_sdk))
+                .transpose()?;
+            cmd_run::run_from_config_with_repro(
                 &config,
                 capture_stderr,
                 tee_stderr,
                 trace,
                 action_output_dir,
                 action_redact_server_identity,
+                repro.as_ref(),
             )
             .await
         }
@@ -163,11 +170,16 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
             concurrent,
             writes_per_worker,
             pipelined,
+            emit_repro,
+            repro_sdk,
             env,
             startup_timeout,
             output_dir,
             action_redact_server_identity,
         } => {
+            let repro = emit_repro
+                .map(|path| ReproRequest::new(path, repro_sdk))
+                .transpose()?;
             let target = cmd_detect::DetectTarget {
                 server,
                 env,
@@ -183,6 +195,7 @@ pub(crate) async fn dispatch(cmd: Cmd) -> Result<()> {
                 concurrent,
                 writes_per_worker,
                 pipelined,
+                repro.as_ref(),
                 &output_dir,
             )
             .await

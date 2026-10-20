@@ -112,6 +112,43 @@ mode. If a round's replies do not all arrive within the hang threshold plus
 the grace period, the check stops there and reports the missing ones as
 deadlocks.
 
+## A repro for the upstream report
+
+Maintainers of the server will want a repro they can run without
+mcp-loadtest. Add `--emit-repro` to a `--pipelined` run, and when it finds
+lost updates it writes one on the official MCP SDK: a `.mjs` file uses
+`@modelcontextprotocol/sdk`, a `.py` file the `mcp` package
+(`--repro-sdk node|python` overrides the extension).
+
+```bash
+mcp-loadtest lost-update --pipelined \
+  --server "npx -y @kazuph/mcp-taskmanager@1.1.1" \
+  --env TASK_MANAGER_FILE_PATH=/tmp/tm/tasks.json --startup-timeout 60s \
+  --write-tool request_planning \
+  --write-args '{"originalRequest":"{marker}","tasks":[{"title":"{marker}","description":"{marker}"}]}' \
+  --read-tool list_requests --concurrent 5 --writes-per-worker 2 \
+  --emit-repro repro.mjs
+```
+
+The script starts the server with the same command, args and env, sends
+one round of `--concurrent` writes at once on one session, each with a
+unique marker, then calls the read tool once:
+
+```text
+$ npm install @modelcontextprotocol/sdk && node repro.mjs
+calls: 5 sent, 5 succeeded, 0 isError, 0 failed
+read: 1 of 5 acknowledged writes are in the result
+LOST: 4 acknowledged writes are missing
+```
+
+It exits 1 when an acknowledged write is missing. Only the pipelined
+(one-process) case is covered, which is what a client running tool calls in
+parallel hits; a loss that needs several server processes has no script.
+`run --emit-repro <path>` does the same for a `lost_update` config with
+`pipelined = true`. The env is copied into the script, so check it for
+secrets before posting it, and trim the store path to something the
+maintainers can use.
+
 ## Reading the result
 
 | Outcome | Meaning |
