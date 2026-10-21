@@ -51,6 +51,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/examples/ci-gate.md`: adding `deadlock-probe` and `lost_update` to a
   server's pull-request workflow through the Action.
 
+### Fixed
+
+- Multi-process `lost-update` now reads the control and the final result
+  from sessions started after the writes, not from the run session. A
+  server that loads its store once at start and writes its whole copy back,
+  as mcp-simple-memory 0.4.0 does, was reported as inconclusive while it
+  lost most acknowledged writes; it now fails with those writes counted.
+  See [ADR 0036](docs/adr/0036-lost-update-reads-from-fresh-sessions.md).
+
 ## [0.6.0] — Release contents
 
 This section describes the source contents intended for `v0.6.0`. Its presence

@@ -2,7 +2,8 @@
 
 Date: 2026-10-18
 Status: Accepted; the handling of refused writes is amended by
-[0032](0032-lost-update-refused-writes.md)
+[0032](0032-lost-update-refused-writes.md), and the session that reads by
+[0036](0036-lost-update-reads-from-fresh-sessions.md)
 
 ## Context
 

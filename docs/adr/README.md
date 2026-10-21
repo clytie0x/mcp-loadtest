@@ -32,7 +32,7 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0024](0024-reposition-as-mcp-bug-detector.md) | Strategy: reposition as an MCP concurrency-bug CI gate (supersedes 0004) | Accepted |
 | [0025](0025-trim-to-detector-surface.md)      | Trim the workspace to the detector surface (applies 0024)             | Accepted |
 | [0026](0026-advance-conformance-pin-c37eec8.md) | Advance the reviewed conformance pin to c37eec8 (updates 0023)      | Accepted |
-| [0027](0027-lost-update-detector.md)          | Lost-update detector with per-write markers                           | Accepted; refused writes amended by 0032 |
+| [0027](0027-lost-update-detector.md)          | Lost-update detector with per-write markers                           | Accepted; refused writes amended by 0032, reads by 0036 |
 | [0028](0028-dispatched-release-tagging.md)    | Create release tags from a dispatched workflow                        | Accepted |
 | [0029](0029-restart-stdio-server-killed-by-discovery.md) | Restart a stdio server that the discovery probe killed (extends 0023) | Accepted |
 | [0030](0030-deadlock-probe-picks-a-tool.md)   | `deadlock-probe` picks a read-only tool when `--tool` is omitted     | Accepted |
@@ -41,6 +41,7 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0033](0033-pipelined-lost-update.md)         | Pipelined lost-update check on one session (extends 0027)             | Accepted |
 | [0034](0034-sdk-repro-script.md)              | Write an official-SDK repro script from a pipelined lost-update finding (extends 0033) | Accepted |
 | [0035](0035-lost-update-picks-tools.md)       | `lost-update` picks its write and read tools when they are omitted    | Accepted |
+| [0036](0036-lost-update-reads-from-fresh-sessions.md) | Multi-process `lost_update` reads from sessions started after the writes (amends 0027) | Accepted |
 
 ## When to write a new ADR
 
