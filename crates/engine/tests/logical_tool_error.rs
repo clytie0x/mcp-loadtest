@@ -1,11 +1,12 @@
 //! Logical MCP tool errors (`isError: true`) are failures despite their
-//! successful JSON-RPC envelope.
+//! successful JSON-RPC envelope, and the probe notes what the server said.
 
 mod helpers;
 
 use std::time::{Duration, Instant};
 
 use mcp_loadtest_core::metrics::Recorder;
+use mcp_loadtest_engine::scenario::deadlock_probe::DeadlockProbe;
 use mcp_loadtest_engine::scenario::race_check::RaceCheck;
 use mcp_loadtest_engine::scenario::sustained::Sustained;
 use mcp_loadtest_engine::scenario::{RunContext, Scenario};
@@ -78,5 +79,70 @@ async fn race_check_counts_logical_tool_errors_as_failures() {
     assert_eq!(outcome.successful_calls, 0, "got {outcome:?}");
     assert_eq!(outcome.error_count, 2, "got {outcome:?}");
     assert_eq!(ctx.metrics.snapshot().outcomes.server_error, 2);
+    session.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn deadlock_probe_notes_what_the_server_returned() {
+    let python = helpers::python();
+    let fixture = helpers::fixture_path("mock-tool-error.py");
+    let mut session = Session::spawn(&python, [fixture.as_os_str()])
+        .await
+        .expect("spawn");
+    let scenario = DeadlockProbe {
+        concurrent: 2,
+        hang_threshold: Duration::from_secs(5),
+        grace_period: Duration::from_secs(1),
+        tool: "fail".to_owned(),
+        args: json!({}),
+    };
+    let ctx = context().with_session_factory(factory());
+    let outcome = scenario.drive(&mut session, &ctx).await;
+
+    assert_eq!(outcome.error_count, 2, "got {outcome:?}");
+    assert_eq!(ctx.metrics.snapshot().outcomes.server_error, 2);
+    let notes: Vec<&String> = outcome
+        .notes
+        .iter()
+        .filter(|n| n.contains("tool error: tool=fail"))
+        .collect();
+    assert_eq!(notes.len(), 2, "{:?}", outcome.notes);
+    assert!(
+        notes
+            .iter()
+            .all(|n| n.ends_with("isError: logical failure")),
+        "{notes:?}"
+    );
+    session.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn deadlock_probe_notes_escape_a_server_supplied_tool_name() {
+    let python = helpers::python();
+    let fixture = helpers::fixture_path("mock-tool-error.py");
+    let mut session = Session::spawn(&python, [fixture.as_os_str()])
+        .await
+        .expect("spawn");
+    let scenario = DeadlockProbe {
+        concurrent: 1,
+        hang_threshold: Duration::from_secs(5),
+        grace_period: Duration::from_secs(1),
+        tool: "fail\u{1b}]0;owned\u{7}".to_owned(),
+        args: json!({}),
+    };
+    let outcome = scenario.drive(&mut session, &context()).await;
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.starts_with("tool error: tool=fail\\u{1b}]0;owned\\u{7} iter=0")),
+        "{:?}",
+        outcome.notes
+    );
+    assert!(
+        outcome.notes.iter().all(|n| !n.contains('\u{1b}')),
+        "{:?}",
+        outcome.notes
+    );
     session.shutdown().await.expect("shutdown");
 }
