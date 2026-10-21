@@ -17,11 +17,13 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::scenario::{
-    RunContext, Scenario, ScenarioOutcome, classify_error, is_logical_tool_error, pool, teardown,
+    RunContext, Scenario, ScenarioOutcome, classify_error, error_text, is_logical_tool_error, pool,
+    teardown,
 };
 use mcp_loadtest_core::metrics::CallOutcome;
 use mcp_loadtest_protocol::Session;
 use mcp_loadtest_protocol::hang_detector::{HangOutcome, hang_detect};
+use mcp_loadtest_protocol::mcp::CallToolResult;
 
 /// Probe a server for the deadlock bug class.
 ///
@@ -175,6 +177,7 @@ async fn drive_one(
                 outcome.error_count = 1;
                 ctx.metrics
                     .record_tool(tool, duration, CallOutcome::ServerError);
+                outcome.notes.push(tool_error_note(tool, iter, &result));
             } else {
                 outcome.successful_calls = 1;
                 ctx.metrics
@@ -187,6 +190,7 @@ async fn drive_one(
                 outcome.error_count = 1;
                 ctx.metrics
                     .record_tool(tool, duration, CallOutcome::ServerError);
+                outcome.notes.push(tool_error_note(tool, iter, &result));
             } else {
                 ctx.metrics.record_tool(tool, duration, CallOutcome::Hang);
             }
@@ -221,6 +225,14 @@ async fn drive_one(
         }
     }
     outcome
+}
+
+/// What the server said when `tool` answered with `isError`.
+fn tool_error_note(tool: &str, iter: u32, result: &CallToolResult) -> String {
+    format!(
+        "tool error: tool={tool} iter={iter} isError: {}",
+        error_text(result)
+    )
 }
 
 #[cfg(test)]

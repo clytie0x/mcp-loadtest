@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 use mcp_loadtest_core::metrics::{CallOutcome, Recorder};
 use mcp_loadtest_protocol::Session;
 use mcp_loadtest_protocol::SessionFactory;
-use mcp_loadtest_protocol::mcp::CallToolResult;
+use mcp_loadtest_protocol::mcp::{CallToolResult, Content};
 use mcp_loadtest_protocol::session::SessionError;
 use mcp_loadtest_protocol::transport::TransportError;
 
@@ -177,6 +177,41 @@ pub(crate) fn classify_error(err: &SessionError) -> CallOutcome {
 /// `successful_calls`; otherwise an all-tool-errors workload can report PASS.
 pub(crate) fn is_logical_tool_error(result: &CallToolResult) -> bool {
     result.is_error
+}
+
+/// The text a tool error carries, on one line and capped, for a note.
+pub(crate) fn error_text(result: &CallToolResult) -> String {
+    const MAX_CHARS: usize = 200;
+    let text = result
+        .content
+        .iter()
+        .filter_map(|c| match c {
+            Content::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    // Server text reaches the terminal: escape what could drive it.
+    let text: String = text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .flat_map(|c| {
+            if c.is_control() {
+                c.escape_default().collect::<Vec<_>>()
+            } else {
+                vec![c]
+            }
+        })
+        .collect();
+    if text.is_empty() {
+        return "(no text)".to_owned();
+    }
+    match text.char_indices().nth(MAX_CHARS) {
+        Some((cut, _)) => format!("{}…", &text[..cut]),
+        None => text,
+    }
 }
 
 /// `true` when `err` indicates the underlying session is gone and the
@@ -392,5 +427,29 @@ mod tests {
         assert!(!is_terminal_error(&SessionError::InvalidJsonRpcVersion {
             got: "3.0".to_owned(),
         }));
+    }
+
+    #[test]
+    fn error_text_is_one_capped_line() {
+        let result = |text: &str| CallToolResult {
+            meta: None,
+            content: vec![Content::Text {
+                text: text.to_owned(),
+            }],
+            is_error: true,
+            structured_content: None,
+        };
+        assert_eq!(
+            error_text(&result("Could not find exact match for edit:\nEND")),
+            "Could not find exact match for edit: END"
+        );
+        assert_eq!(error_text(&result("  ")), "(no text)");
+        assert_eq!(
+            error_text(&result("bad \u{1b}[31mred")),
+            "bad \\u{1b}[31mred"
+        );
+        let long = error_text(&result(&"é".repeat(300)));
+        assert_eq!(long.chars().count(), 201);
+        assert!(long.ends_with('…'));
     }
 }

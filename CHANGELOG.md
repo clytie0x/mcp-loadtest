@@ -59,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as mcp-simple-memory 0.4.0 does, was reported as inconclusive while it
   lost most acknowledged writes; it now fails with those writes counted.
   See [ADR 0036](docs/adr/0036-lost-update-reads-from-fresh-sessions.md).
+- `deadlock-probe` now notes what the server said when a call returns
+  `isError` (`tool error: tool=… iter=… isError: <text>`), in the terminal
+  summary, `report.md` and `metrics.json`. Before, the call only counted as
+  `server_error`. Tool error text in `deadlock-probe` and `lost_update` notes
+  is collapsed to one line, capped at 200 characters, and has control
+  characters escaped so a server cannot drive the terminal.
 
 ## [0.6.0] — Release contents
 

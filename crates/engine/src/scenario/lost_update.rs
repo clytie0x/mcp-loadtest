@@ -41,11 +41,12 @@ use serde_json::Value;
 
 use crate::scenario::race_check::call_tool_result_to_value;
 use crate::scenario::{
-    RunContext, Scenario, ScenarioOutcome, classify_error, is_logical_tool_error, pool, teardown,
+    RunContext, Scenario, ScenarioOutcome, classify_error, error_text, is_logical_tool_error, pool,
+    teardown,
 };
 use mcp_loadtest_core::metrics::CallOutcome;
 use mcp_loadtest_protocol::hang_detector::{HangOutcome, hang_detect};
-use mcp_loadtest_protocol::mcp::{CallToolResult, Content};
+use mcp_loadtest_protocol::mcp::CallToolResult;
 use mcp_loadtest_protocol::{Session, SessionFactory};
 
 /// Placeholder replaced by a run-unique, fixed-width marker per write.
@@ -825,28 +826,6 @@ fn has_marker(template: &Value) -> bool {
     }
 }
 
-/// The text a tool error carries, on one line and capped, for a note.
-fn error_text(result: &CallToolResult) -> String {
-    const MAX_CHARS: usize = 200;
-    let text = result
-        .content
-        .iter()
-        .filter_map(|c| match c {
-            Content::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
-    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if text.is_empty() {
-        return "(no text)".to_owned();
-    }
-    match text.char_indices().nth(MAX_CHARS) {
-        Some((cut, _)) => format!("{}…", &text[..cut]),
-        None => text,
-    }
-}
-
 /// How many entries of `first` that hold no marker of this run (`run_prefix`)
 /// are missing from `second`. An entry is a line of text, or a string inside
 /// JSON a text holds; digit runs compare equal, so a count or a timestamp
@@ -941,6 +920,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use mcp_loadtest_protocol::mcp::Content;
 
     #[test]
     fn render_substitutes_every_placeholder_in_nested_strings() {
@@ -997,26 +977,6 @@ mod tests {
         let first = result("item 1\nitem 2");
         let second = result("item 2");
         assert_eq!(evicted_entries(&first, &second, prefix), 1);
-    }
-
-    #[test]
-    fn error_text_is_one_capped_line() {
-        let result = |text: &str| CallToolResult {
-            meta: None,
-            content: vec![Content::Text {
-                text: text.to_owned(),
-            }],
-            is_error: true,
-            structured_content: None,
-        };
-        assert_eq!(
-            error_text(&result("Could not find exact match for edit:\nEND")),
-            "Could not find exact match for edit: END"
-        );
-        assert_eq!(error_text(&result("  ")), "(no text)");
-        let long = error_text(&result(&"é".repeat(300)));
-        assert_eq!(long.chars().count(), 201);
-        assert!(long.ends_with('…'));
     }
 
     #[test]
