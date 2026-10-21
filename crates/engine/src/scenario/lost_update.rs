@@ -44,9 +44,9 @@ use crate::scenario::{
     RunContext, Scenario, ScenarioOutcome, classify_error, is_logical_tool_error, pool, teardown,
 };
 use mcp_loadtest_core::metrics::CallOutcome;
-use mcp_loadtest_protocol::Session;
 use mcp_loadtest_protocol::hang_detector::{HangOutcome, hang_detect};
 use mcp_loadtest_protocol::mcp::{CallToolResult, Content};
+use mcp_loadtest_protocol::{Session, SessionFactory};
 
 /// Placeholder replaced by a run-unique, fixed-width marker per write.
 pub const MARKER_PLACEHOLDER: &str = "{marker}";
@@ -105,24 +105,13 @@ impl Scenario for LostUpdate {
         let mut outcome = ScenarioOutcome::default();
 
         // 1. Control: a write on a fresh session must be visible to a read on
-        //    the run session, which proves both that the read observes writes
-        //    and that sessions share state.
-        let mut probe = tokio::select! {
-            biased;
-            _ = ctx.cancel_token.cancelled() => {
-                outcome.notes.push("lost_update: cancelled before the control write".to_owned());
-                return outcome;
-            }
-            spawned = factory.spawn() => match spawned {
-                Ok(probe) => probe,
-                Err(err) => {
-                    outcome.error_count += 1;
-                    outcome
-                        .notes
-                        .push(format!("lost_update: control session failed to start: {err}"));
-                    return outcome;
-                }
-            },
+        //    another fresh session, which proves both that the read observes
+        //    writes and that sessions share state. Reads use sessions started
+        //    after the writes, so a server that loads its store once at start
+        //    is read the way a new client would see it.
+        let Some(mut probe) = fresh_session(&factory, ctx, &mut outcome, "control write").await
+        else {
+            return outcome;
         };
         let control = marker(&nonce, "c", 0);
         let control_args = render(&self.write_args, "control", 0, &control);
@@ -143,16 +132,21 @@ impl Scenario for LostUpdate {
                 .push("lost_update: control write failed; cannot run the check".to_owned());
             return outcome;
         }
-        match call_strict(
-            session,
+        let Some(mut reader) = fresh_session(&factory, ctx, &mut outcome, "control read").await
+        else {
+            return outcome;
+        };
+        let control_read = call_strict(
+            &mut reader,
             &self.read_tool,
             &self.read_args,
             ctx,
             &mut outcome,
             "control read",
         )
-        .await
-        {
+        .await;
+        teardown::shutdown_session(reader, &mut outcome, "lost_update control reader").await;
+        match control_read {
             Some(read) if contains(&read, &control) => {}
             Some(_) => {
                 outcome.error_count += 1;
@@ -236,8 +230,16 @@ impl Scenario for LostUpdate {
                 return outcome;
             }
         };
-        self.verify(session, ctx, outcome, &acknowledged, &control, &nonce)
-            .await
+        // Every writer has shut down; read from a session started now.
+        let Some(mut reader) = fresh_session(&factory, ctx, &mut outcome, "final read").await
+        else {
+            return outcome;
+        };
+        let mut outcome = self
+            .verify(&mut reader, ctx, outcome, &acknowledged, &control, &nonce)
+            .await;
+        teardown::shutdown_session(reader, &mut outcome, "lost_update final reader").await;
+        outcome
     }
 
     fn config_schema(&self) -> Value {
@@ -657,6 +659,35 @@ impl LostUpdate {
         } else {
             None
         }
+    }
+}
+
+/// A new session from `factory` for `purpose`, or `None` after noting why
+/// there is none (the run was cancelled, or the session failed to start).
+async fn fresh_session(
+    factory: &SessionFactory,
+    ctx: &RunContext,
+    outcome: &mut ScenarioOutcome,
+    purpose: &str,
+) -> Option<Session> {
+    tokio::select! {
+        biased;
+        _ = ctx.cancel_token.cancelled() => {
+            outcome
+                .notes
+                .push(format!("lost_update: cancelled before the {purpose}"));
+            None
+        }
+        spawned = factory.spawn() => match spawned {
+            Ok(session) => Some(session),
+            Err(err) => {
+                outcome.error_count += 1;
+                outcome
+                    .notes
+                    .push(format!("lost_update: {purpose} session failed to start: {err}"));
+                None
+            }
+        },
     }
 }
 

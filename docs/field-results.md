@@ -786,7 +786,7 @@ probe error above is a tool call that returned an error, listed in the notes.
 | Defect | Status |
 |---|---|
 | `deadlock-probe` drops the text of a tool error. A call answered with `isError` counts as `ServerError`, and neither the summary, `report.md` nor `metrics.json` says what the server returned (`@ai-devkit/memory`, `@pepk/mcp-memory-sqlite`, memory-mcp-lite). JSON-RPC errors are quoted in the notes (state-memory), and `lost_update` quotes `isError` text. The pepk error could not be identified because of this. | Open |
-| `lost_update` misses cross-process loss when each process keeps its own copy of the store. With mcp-simple-memory, the control read on a second process cannot see the first process's write, so the run is `incomplete` while the server keeps 3 of 15 acknowledged writes. A final read from a new session, after the writers have exited, would see the loss. | Open |
+| `lost_update` misses cross-process loss when each process keeps its own copy of the store. With mcp-simple-memory, the control read on a second process cannot see the first process's write, so the run is `incomplete` while the server keeps 3 of 15 acknowledged writes. A final read from a new session, after the writers have exited, would see the loss. | Fixed: the control and final reads now come from sessions started after the writes ([ADR 0036](adr/0036-lost-update-reads-from-fresh-sessions.md)) |
 | `--server` is documented as "parsed shell-style" in every subcommand's help, but `split_server_command` (`crates/core/src/config/load.rs:22-37`) splits on whitespace and ignores quotes. `--server "sh -c 'exec npx ...'"` hands `sh` the argument `'exec`, which fails with `Unterminated quoted string`. The comment on the function says so; the help text does not. | Open |
 | `lost-update` has no `--hang-threshold`, and `deadlock-probe` has no `--env` or `--startup-timeout`. mama-server's 5-process run was inconclusive because of the fixed threshold; the survey wrapped every command in `env` to set the store. | Open, minor |
 | Any `isError` reply counts as a refused write (ADR 0032), so `@chinjinyu/mcp-knowledge-graph-plus` passes while 12 of 15 parallel writes fail with an internal SQLite error, and notes-vault-mcp passed one run with 7 false refusals. The notes show the refusal text, so this is visible but not gated. | Design question, not a defect under ADR 0032 |
@@ -798,5 +798,7 @@ probe error above is a tool call that returned an error, listed in the notes.
 process, compound-memory (search index) and mcp-simple-memory only across
 processes. Five of the six were found by `lost-update` itself; the
 mcp-simple-memory loss needed a script. No deadlock or hang was found. None
-of the six has been reported upstream. Four tool defects are open. The
+of the six has been reported upstream. Four tool defects were open; the
+cross-process one is fixed since (ADR 0036), and a rerun on 2026-10-21
+counted 12 of 15 writes lost in each of 3 runs against mcp-simple-memory. The
 summary for outside readers is [survey-2026-10.md](survey-2026-10.md).

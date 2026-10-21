@@ -9,6 +9,10 @@
 //! - `memory`: each process keeps its own list, so the run session never
 //!   sees the control written on another session; the check is
 //!   inconclusive, not a lost-update finding.
+//! - `snapshot`: each process loads the store once at start and writes its
+//!   whole copy back after every write, as mcp-simple-memory 0.4.0 does.
+//!   A session started before a write never sees it, so the control and
+//!   final reads must come from a session started after the writes.
 //! - `refusing`: refuses odd-numbered writes with `isError`, as a store with
 //!   optimistic concurrency refuses conflicting ones. Every acknowledged
 //!   write lands, so the run passes and counts the refusals.
@@ -185,6 +189,22 @@ async fn append_only_store_keeps_every_write_and_passes() {
     // Control write + read, 24 concurrent writes, final read.
     assert_eq!(outcome.total_calls, 27, "{outcome:?}");
     assert!(report.passed(), "{outcome:?}");
+}
+
+#[tokio::test]
+async fn a_store_each_process_snapshots_at_start_loses_writes_across_processes() {
+    let report = run_store("snapshot", 4, 3).await;
+    let outcome = &report.scenario_outcome;
+    assert!(
+        outcome.lost_update_count > 0,
+        "each process overwrites the others' writes: {outcome:?}"
+    );
+    assert!(!report.passed(), "{outcome:?}");
+    assert!(
+        !outcome.notes.iter().any(|n| n.contains("inconclusive")),
+        "the reads come from sessions started after the writes: {:?}",
+        outcome.notes
+    );
 }
 
 #[tokio::test]

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """mock-store: an append/read store for the lost_update detector.
 
-    mock-store.py --mode racy|inplace|safe|memory|last|refusing|closed|stalling
+    mock-store.py --mode racy|inplace|safe|memory|snapshot|last|refusing|closed|stalling
                   [--store PATH] [--concurrent] [--autopick] [--read-limit N]
 
 PATH defaults to $MOCK_STORE_PATH; a relative PATH resolves against the
@@ -17,6 +17,10 @@ working directory.
           atomic rename, so nothing is lost. (O_APPEND is not atomic across
           processes on Windows, so it cannot model a safe store there.)
 - memory: a per-process list; other sessions never see it.
+- snapshot: loads the JSON list in PATH once, at start, keeps it in memory,
+          and writes the whole copy back after every append, as
+          mcp-simple-memory 0.4.0 does. Each process overwrites the others'
+          writes, and a process started earlier never sees later ones.
 - last:   every append replaces the whole store with its own item, so only
           the most recent write survives.
 - refusing: like safe, but refuses with an isError result every item whose
@@ -203,6 +207,8 @@ CONCURRENT = "--concurrent" in sys.argv
 AUTOPICK = "--autopick" in sys.argv
 READ_LIMIT = int(arg("--read-limit", "0"))
 WRITE_TOOL = "record" if AUTOPICK else "append"
+if MODE == "snapshot" and STORE and pathlib.Path(STORE).exists():
+    MEMORY.extend(json.loads(pathlib.Path(STORE).read_text()))
 READ_TOOL = "list_items" if AUTOPICK else "read"
 SEND_LOCK = threading.Lock()
 WRITES_LOCK = threading.Lock()
@@ -223,6 +229,17 @@ def refuses(item):
 def append(item):
     if MODE == "memory":
         MEMORY.append(item)
+    elif MODE == "snapshot":
+        with WRITES_LOCK:
+            MEMORY.append(item)
+            tmp = pathlib.Path(f"{STORE}.{os.getpid()}.tmp")
+            tmp.write_text(json.dumps(MEMORY))
+            for _ in range(50):
+                try:
+                    os.replace(tmp, STORE)
+                    break
+                except PermissionError:
+                    time.sleep(0.01)
     elif MODE == "last":
         tmp = pathlib.Path(f"{STORE}.{os.getpid()}.tmp")
         tmp.write_text(json.dumps([item]))
@@ -286,7 +303,7 @@ def read_all():
 
 
 def read_store():
-    if MODE == "memory":
+    if MODE in ("memory", "snapshot"):
         return list(MEMORY)
     path = pathlib.Path(STORE)
     if not path.exists():
