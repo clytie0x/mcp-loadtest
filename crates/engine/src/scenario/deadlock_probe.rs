@@ -18,7 +18,7 @@ use serde_json::Value;
 
 use crate::scenario::{
     RunContext, Scenario, ScenarioOutcome, classify_error, error_text, is_logical_tool_error, pool,
-    teardown,
+    printable, teardown,
 };
 use mcp_loadtest_core::metrics::CallOutcome;
 use mcp_loadtest_protocol::Session;
@@ -168,6 +168,8 @@ async fn drive_one(
         return outcome;
     }
 
+    // The tool name can come from the server's `tools/list`.
+    let shown = printable(tool);
     let hang_outcome =
         hang_detect(session.call_tool(tool, args), hang_threshold, grace_period).await;
     outcome.total_calls = 1;
@@ -177,7 +179,7 @@ async fn drive_one(
                 outcome.error_count = 1;
                 ctx.metrics
                     .record_tool(tool, duration, CallOutcome::ServerError);
-                outcome.notes.push(tool_error_note(tool, iter, &result));
+                outcome.notes.push(tool_error_note(&shown, iter, &result));
             } else {
                 outcome.successful_calls = 1;
                 ctx.metrics
@@ -190,12 +192,12 @@ async fn drive_one(
                 outcome.error_count = 1;
                 ctx.metrics
                     .record_tool(tool, duration, CallOutcome::ServerError);
-                outcome.notes.push(tool_error_note(tool, iter, &result));
+                outcome.notes.push(tool_error_note(&shown, iter, &result));
             } else {
                 ctx.metrics.record_tool(tool, duration, CallOutcome::Hang);
             }
             outcome.notes.push(format!(
-                "slow response: tool={tool} iter={iter} took={}ms",
+                "slow response: tool={shown} iter={iter} took={}ms",
                 duration.as_millis()
             ));
         }
@@ -205,7 +207,7 @@ async fn drive_one(
             ctx.metrics
                 .record_tool(tool, hung_for, CallOutcome::Deadlock);
             outcome.notes.push(format!(
-                "deadlock detected: tool={tool} iter={iter} hung_for={}ms",
+                "deadlock detected: tool={shown} iter={iter} hung_for={}ms",
                 hung_for.as_millis()
             ));
         }
@@ -215,7 +217,7 @@ async fn drive_one(
                 .record_tool(tool, Duration::ZERO, classify_error(&err));
             outcome
                 .notes
-                .push(format!("error: tool={tool} iter={iter} err={err}"));
+                .push(format!("error: tool={shown} iter={iter} err={err}"));
         }
         other => {
             outcome.error_count = 1;
@@ -227,7 +229,8 @@ async fn drive_one(
     outcome
 }
 
-/// What the server said when `tool` answered with `isError`.
+/// What the server said when `tool` (already escaped) answered with
+/// `isError`.
 fn tool_error_note(tool: &str, iter: u32, result: &CallToolResult) -> String {
     format!(
         "tool error: tool={tool} iter={iter} isError: {}",

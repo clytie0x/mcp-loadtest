@@ -115,3 +115,34 @@ async fn deadlock_probe_notes_what_the_server_returned() {
     );
     session.shutdown().await.expect("shutdown");
 }
+
+#[tokio::test]
+async fn deadlock_probe_notes_escape_a_server_supplied_tool_name() {
+    let python = helpers::python();
+    let fixture = helpers::fixture_path("mock-tool-error.py");
+    let mut session = Session::spawn(&python, [fixture.as_os_str()])
+        .await
+        .expect("spawn");
+    let scenario = DeadlockProbe {
+        concurrent: 1,
+        hang_threshold: Duration::from_secs(5),
+        grace_period: Duration::from_secs(1),
+        tool: "fail\u{1b}]0;owned\u{7}".to_owned(),
+        args: json!({}),
+    };
+    let outcome = scenario.drive(&mut session, &context()).await;
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.starts_with("tool error: tool=fail\\u{1b}]0;owned\\u{7} iter=0")),
+        "{:?}",
+        outcome.notes
+    );
+    assert!(
+        outcome.notes.iter().all(|n| !n.contains('\u{1b}')),
+        "{:?}",
+        outcome.notes
+    );
+    session.shutdown().await.expect("shutdown");
+}

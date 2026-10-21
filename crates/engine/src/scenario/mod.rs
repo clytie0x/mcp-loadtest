@@ -187,24 +187,15 @@ pub(crate) fn error_text(result: &CallToolResult) -> String {
         .iter()
         .filter_map(|c| match c {
             Content::Text { text } => Some(text.as_str()),
+            // A text block with annotations or `_meta` arrives raw.
+            Content::Raw(block) if block.get("type").and_then(Value::as_str) == Some("text") => {
+                block.get("text").and_then(Value::as_str)
+            }
             _ => None,
         })
         .collect::<Vec<_>>()
         .join(" ");
-    // Server text reaches the terminal: escape what could drive it.
-    let text: String = text
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .flat_map(|c| {
-            if c.is_control() {
-                c.escape_default().collect::<Vec<_>>()
-            } else {
-                vec![c]
-            }
-        })
-        .collect();
+    let text = printable(&text.split_whitespace().collect::<Vec<_>>().join(" "));
     if text.is_empty() {
         return "(no text)".to_owned();
     }
@@ -212,6 +203,20 @@ pub(crate) fn error_text(result: &CallToolResult) -> String {
         Some((cut, _)) => format!("{}…", &text[..cut]),
         None => text,
     }
+}
+
+/// `text` with control characters escaped, for server-supplied text that
+/// reaches the terminal.
+pub(crate) fn printable(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if c.is_control() {
+            out.extend(c.escape_default());
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// `true` when `err` indicates the underlying session is gone and the
@@ -448,6 +453,17 @@ mod tests {
             error_text(&result("bad \u{1b}[31mred")),
             "bad \\u{1b}[31mred"
         );
+        let annotated = CallToolResult {
+            meta: None,
+            content: vec![Content::Raw(serde_json::json!({
+                "type": "text",
+                "text": "disk full",
+                "annotations": {"audience": ["user"]}
+            }))],
+            is_error: true,
+            structured_content: None,
+        };
+        assert_eq!(error_text(&annotated), "disk full");
         let long = error_text(&result(&"é".repeat(300)));
         assert_eq!(long.chars().count(), 201);
         assert!(long.ends_with('…'));
