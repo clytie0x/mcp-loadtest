@@ -100,6 +100,9 @@ pub(crate) enum Cmd {
         /// Optional shell-style server command (`"python -m my_mcp"`) to run
         /// an `initialize` smoke against; on failure the captured stderr is
         /// reported. Omit to skip the server check.
+        ///
+        /// Quotes group words (`"node 'my dir/server.js'"`). There are no
+        /// escapes: backslashes are kept as typed, and nothing is expanded.
         #[arg(long)]
         server: Option<String>,
         /// Directory scanned for stale run accumulation.
@@ -137,6 +140,9 @@ pub(crate) enum Cmd {
         trace_file: PathBuf,
         /// Server command for the stdio transport, parsed shell-style:
         /// `"python -m my_mcp"`.
+        ///
+        /// Quotes group words (`"node 'my dir/server.js'"`). There are no
+        /// escapes: backslashes are kept as typed, and nothing is expanded.
         #[arg(long)]
         server: Option<String>,
         /// Endpoint URL for the http / sse / ws transports.
@@ -154,6 +160,9 @@ pub(crate) enum Cmd {
     /// Quick deadlock probe — convenience wrapper around `DeadlockProbe`.
     DeadlockProbe {
         /// Server command, parsed shell-style: `"python -m my_mcp"` or `"node dist/server.js"`.
+        ///
+        /// Quotes group words (`"node 'my dir/server.js'"`). There are no
+        /// escapes: backslashes are kept as typed, and nothing is expanded.
         #[arg(short, long)]
         server: String,
         /// Tool name to call. If omitted, the probe lists the server's tools
@@ -187,6 +196,9 @@ pub(crate) enum Cmd {
     /// same instant; any difference between the responses fails.
     RaceCheck {
         /// Server command, parsed shell-style: `"python -m my_mcp"`.
+        ///
+        /// Quotes group words (`"node 'my dir/server.js'"`). There are no
+        /// escapes: backslashes are kept as typed, and nothing is expanded.
         #[arg(short, long)]
         server: String,
         /// Tool name to call. Use a tool that should answer identical inputs
@@ -215,6 +227,9 @@ pub(crate) enum Cmd {
     /// it at a disposable store.
     LostUpdate {
         /// Server command, parsed shell-style: `"python -m my_mcp"`.
+        ///
+        /// Quotes group words (`"node 'my dir/server.js'"`). There are no
+        /// escapes: backslashes are kept as typed, and nothing is expanded.
         #[arg(short, long)]
         server: String,
         /// Tool that records one write. If omitted, the check lists the

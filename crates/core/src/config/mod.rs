@@ -10,12 +10,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::version::ProtocolVersion;
 
+mod command;
 mod example;
 mod load;
 mod schema;
 mod tool_slo;
 mod validate;
 
+pub use command::split_server_command;
 pub use example::example_config;
 pub use load::*;
 pub use schema::{CONFIG_SCHEMA_JSON, config_schema, config_schema_pretty};

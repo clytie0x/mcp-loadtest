@@ -1,6 +1,6 @@
 //! Parsing entry points for the config schema: [`Config::from_toml_str`],
-//! [`Config::from_file`], [`ConfigError`], and [`split_server_command`]. The
-//! only file in the config module that touches `toml` parsing or `std::fs`.
+//! [`Config::from_file`] and [`ConfigError`]. The only file in the config
+//! module that touches `toml` parsing or `std::fs`.
 
 use super::{Config, validate};
 
@@ -17,23 +17,6 @@ pub enum ConfigError {
     /// Semantic validation failure (e.g., unknown scenario name).
     #[error("invalid config: {0}")]
     Invalid(String),
-}
-
-/// Parse a shell-style server command string (e.g., `"python -m foo"`) into
-/// `(command, args)` by whitespace-splitting. Does NOT honor quoting — callers
-/// that need real shell parsing should switch to `shell-words` or similar.
-///
-/// Returns [`ConfigError::Invalid`] when the input is empty / all whitespace.
-/// Centralized here so the CLI and the in-process tool handlers don't keep
-/// copy-pasting the same five lines.
-pub fn split_server_command(s: &str) -> Result<(String, Vec<String>), ConfigError> {
-    let mut parts = s.split_whitespace();
-    let command = parts
-        .next()
-        .ok_or_else(|| ConfigError::Invalid("server command is empty".into()))?
-        .to_string();
-    let args = parts.map(str::to_string).collect();
-    Ok((command, args))
 }
 
 impl Config {

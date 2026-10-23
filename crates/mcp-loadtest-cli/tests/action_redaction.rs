@@ -105,10 +105,7 @@ fn action_mode_discards_discovery_session_stderr() {
     let temp = tempdir().expect("tempdir");
     let output_dir = path_text(temp.path());
     let python = std::env::var("MCP_LOADTEST_PYTHON").unwrap_or_else(|_| "python".to_string());
-    // `--server` is split on whitespace, so the script has none.
-    let server = format!(
-        "{python} -c __import__('sys').stderr.write(str(__import__('sys').argv)) {SENTINEL}"
-    );
+    let server = format!("{python} -c \"import sys; sys.stderr.write(str(sys.argv))\" {SENTINEL}");
 
     let discovery = run_cli(&[
         "deadlock-probe",
@@ -192,9 +189,8 @@ fn action_mode_redacts_lost_update_stderr_and_reports() {
     let output_dir = path_text(&temp.path().join("runs"));
     let python = std::env::var("MCP_LOADTEST_PYTHON").unwrap_or_else(|_| "python".to_string());
 
-    let echo_argv = format!(
-        "{python} -c __import__('sys').stderr.write(str(__import__('sys').argv)) {SENTINEL}"
-    );
+    let echo_argv =
+        format!("{python} -c \"import sys; sys.stderr.write(str(sys.argv))\" {SENTINEL}");
     let crashed = run_cli(&[
         "lost-update",
         "--server",
@@ -272,9 +268,8 @@ fn action_mode_redacts_lost_update_tool_discovery() {
     let temp = tempdir().expect("tempdir");
     let output_dir = path_text(temp.path());
     let python = std::env::var("MCP_LOADTEST_PYTHON").unwrap_or_else(|_| "python".to_string());
-    let echo_argv = format!(
-        "{python} -c __import__('sys').stderr.write(str(__import__('sys').argv)) {SENTINEL}"
-    );
+    let echo_argv =
+        format!("{python} -c \"import sys; sys.stderr.write(str(sys.argv))\" {SENTINEL}");
     for server in [
         format!("no-such-action-binary --token {SENTINEL}"),
         echo_argv,

@@ -42,6 +42,7 @@ Append-only log of significant decisions. New ADRs are added with the next numbe
 | [0034](0034-sdk-repro-script.md)              | Write an official-SDK repro script from a pipelined lost-update finding (extends 0033) | Accepted |
 | [0035](0035-lost-update-picks-tools.md)       | `lost-update` picks its write and read tools when they are omitted    | Accepted |
 | [0036](0036-lost-update-reads-from-fresh-sessions.md) | Multi-process `lost_update` reads from sessions started after the writes (amends 0027) | Accepted |
+| [0037](0037-server-command-quoting.md)       | `--server` honors quotes, without escapes                             | Accepted |
 
 ## When to write a new ADR
 
