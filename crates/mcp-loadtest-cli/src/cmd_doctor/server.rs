@@ -17,6 +17,8 @@ const NAME: &str = "server initialize smoke";
 const FIX: &str = "the server failed to initialize — see the captured stderr above; \
                     verify the command and that its dependencies are installed";
 const REDACTED_FIX: &str = "the server failed to initialize — verify the command and use environment variables for credentials";
+const PARSE_FIX: &str = "--server must name a program and close every quote; quotes group words \
+                          and there are no escapes";
 const TEARDOWN_FIX: &str =
     "the server initialized but did not shut down cleanly — inspect its lifecycle handlers";
 /// Whole constructor budget. This must exceed `Session`'s 10s startup budget
@@ -42,14 +44,14 @@ pub(super) async fn check(server: Option<&str>, redact_server_identity: bool) ->
             return CheckResult::fail(
                 NAME,
                 "could not parse --server (identity redacted by Action)",
-                REDACTED_FIX,
+                PARSE_FIX,
             );
         }
         Err(e) => {
             return CheckResult::fail(
                 NAME,
                 format!("could not parse --server `{server}`: {e}"),
-                FIX,
+                PARSE_FIX,
             );
         }
     };
@@ -202,10 +204,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unparseable_server_string_fails() {
-        let r = check(Some("   "), false).await;
-        assert!(!r.ok);
-        assert!(r.detail.contains("could not parse"));
+    async fn unparseable_server_string_fails_with_the_parse_fix() {
+        for server in ["   ", "python -c 'x"] {
+            for redact in [false, true] {
+                let r = check(Some(server), redact).await;
+                assert!(!r.ok);
+                assert!(r.detail.contains("could not parse"), "detail: {}", r.detail);
+                assert_eq!(r.fix, Some(PARSE_FIX), "server {server:?}, redact {redact}");
+                if redact {
+                    assert!(!r.detail.contains("python"), "detail leaked: {}", r.detail);
+                }
+            }
+        }
     }
 
     #[tokio::test]
