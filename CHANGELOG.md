@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `--server` now honors single and double quotes, as its help text already
+  said ("parsed shell-style"). A quoted word keeps its spaces and loses its
+  quotes: `--server "sh -c 'exec npx -y pkg'"` passes `exec npx -y pkg` to
+  `sh` as one argument, and a server path with a space can be quoted. There
+  are no escapes, so backslashes in Windows paths are kept as typed. An
+  unterminated quote is an error. Before, the command was split on
+  whitespace and quote characters were passed through. A command that relied
+  on that, such as an unquoted JSON argument, must now quote it. This covers
+  `deadlock-probe`, `race-check`, `lost-update`, `doctor`, `replay`, the
+  `serve` tools' `server_command`, and `--emit-repro` scripts. See
+  [ADR 0037](docs/adr/0037-server-command-quoting.md).
+
 ### Added
 
 - The GitHub Action accepts `command: lost-update`. It passes `server` and
